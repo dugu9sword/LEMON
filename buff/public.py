@@ -10,11 +10,8 @@ import argparse
 from typing import List, Dict, NamedTuple
 from colorama import Fore, Back
 import psutil
-import typing
+from sklearn.metrics import precision_recall_fscore_support as sklearn_prf
 
-from sklearn.metrics import precision_recall_fscore_support
-
-__log_path__ = "logs"
 __saved_path__ = "saved/vars"
 
 arg_required = object()
@@ -24,7 +21,7 @@ arg_place_holder = object()
 
 def create_folder(folder_path):
     if not os.path.exists(folder_path):
-        os.mkdir(path=folder_path)
+        os.makedirs(folder_path, exist_ok=True)
 
 
 def show_mem(sth=""):
@@ -32,33 +29,6 @@ def show_mem(sth=""):
     info = top.memory_full_info()
     memory = info.uss / 1024. / 1024.
     print(Color.green('Memory: {:.2f} MB  {}'.format(memory, sth)))
-
-
-class Logger:
-    TERMINAL = 0
-    LOG_FILE = 1
-
-    def __init__(self, filename, append, console):
-        self.console = console
-        self.log_file = open(filename, "a" if append else "w")
-
-    def log(self, info):
-        if self.console:
-            print(info)
-        self.log_file.write("{}\n".format(info))
-        self.log_file.flush()
-
-
-def log_config(filename, append=True, console=True):
-    if not os.path.exists(__log_path__):
-        os.makedirs(__log_path__, exist_ok=True)
-    logger = Logger("{}/{}.txt".format(__log_path__, filename), append=append, console=console)
-    globals()["__logger__"] = logger
-
-
-def log(info):
-    logger = globals()["__logger__"]  # type:Logger
-    logger.log(info)
 
 
 def set_saved_path(path):
@@ -95,13 +65,14 @@ def auto_create(name, func, override=False, path=__saved_path__):
     return obj
 
 
-@contextmanager
-def time_record(name, show_time_record=False):
-    start = time.time()
-    yield
-    end = time.time()
-    if show_time_record:
-        logging.info("Context [{}] cost {:.3} seconds".format(name, end - start))
+#
+# @contextmanager
+# def time_record(name, show_time_record=False):
+#     start = time.time()
+#     yield
+#     end = time.time()
+#     if show_time_record:
+#         log("Context [{}] cost {:.3} seconds".format(name, end - start))
 
 
 class ProgressManager:
@@ -132,6 +103,10 @@ class ProgressManager:
     @property
     def complete_num(self):
         return self.__complete
+
+    @property
+    def total_num(self):
+        return self.__total
 
 
 class DataSet:
@@ -189,13 +164,13 @@ def hit(scores: List[List], gold: List, k: int):
     return corr / total
 
 
-def precision_recall_f1(pred: List, gold: List) -> (List, List, List):
-    precision, recall, f1, _ = precision_recall_fscore_support(gold, pred, beta=1, average=None)
+def get_prf(pred: List, gold: List) -> (List, List, List):
+    precision, recall, f1, _ = sklearn_prf(gold, pred, beta=1, average=None)
     return precision.tolist(), recall.tolist(), f1.tolist()
 
 
-def print_prf(pred: List, gold: List, classes):
-    precision, recall, f1, _ = precision_recall_fscore_support(gold, pred, beta=1, labels=classes)
+def show_prf(pred: List, gold: List, classes):
+    precision, recall, f1, _ = sklearn_prf(gold, pred, beta=1, labels=classes)
     head = "{:4}|{:15}|{:10}|{:10}|{:10}"
     content = "{:4}|{:15}|{:10f}|{:10f}|{:10f}"
     print(Color.cyan(head.format("ID", "Class", "Precision", "Recall", "F1")))
@@ -214,35 +189,35 @@ def accuracy(scores: List[List], gold: List):
 class Color(object):
     @staticmethod
     def red(s):
-        return Fore.RED + s + Fore.RESET
+        return Fore.RED + str(s) + Fore.RESET
 
     @staticmethod
     def green(s):
-        return Fore.GREEN + s + Fore.RESET
+        return Fore.GREEN + str(s) + Fore.RESET
 
     @staticmethod
     def yellow(s):
-        return Fore.YELLOW + s + Fore.RESET
+        return Fore.YELLOW + str(s) + Fore.RESET
 
     @staticmethod
     def blue(s):
-        return Fore.BLUE + s + Fore.RESET
+        return Fore.BLUE + str(s) + Fore.RESET
 
     @staticmethod
     def magenta(s):
-        return Fore.MAGENTA + s + Fore.RESET
+        return Fore.MAGENTA + str(s) + Fore.RESET
 
     @staticmethod
     def cyan(s):
-        return Fore.CYAN + s + Fore.RESET
+        return Fore.CYAN + str(s) + Fore.RESET
 
     @staticmethod
     def white(s):
-        return Fore.WHITE + s + Fore.RESET
+        return Fore.WHITE + str(s) + Fore.RESET
 
     @staticmethod
     def white_green(s):
-        return Fore.WHITE + Back.GREEN + s + Fore.RESET + Back.RESET
+        return Fore.WHITE + Back.GREEN + str(s) + Fore.RESET + Back.RESET
 
 
 class TrainingStopObserver:
@@ -374,16 +349,36 @@ class Collector:
 
 def analyze_length_count(length_count: dict):
     sorted_count = sorted(length_count.items(), key=lambda kv: kv[0])
-    print("Count:", *sorted_count)
+    print("Analyze length count:")
+    print("\tTotal Count:", *sorted_count)
     pivots = [0.8, 0.9, 0.95, 0.97, 0.98, 0.99, 1.01]
     agg_num = []
     tmp_num = 0
     for k, v in sorted_count:
         tmp_num += v
         agg_num.append(tmp_num)
-    print("Total num: ", tmp_num)
+    print("\tTotal num: ", tmp_num)
     agg_ratio = list(map(lambda x: x / tmp_num, agg_num))
-    print("Ratio: ")
+    print("\tRatio: ")
     for pivot in pivots:
         idx = sum(list(map(lambda x: x < pivot, agg_ratio))) - 1
-        print(" {} : {}".format(pivot,  "-" if idx == -1 else sorted_count[idx][0]))
+        print("\t\t{} : {}".format(pivot, "-" if idx == -1 else sorted_count[idx][0]))
+
+
+def analyze_vocab_count(vocab_count: dict):
+    pivots = [0, 1, 2, 3, 4, 5, 10, 20, 30]
+    vocab_size = []
+    count = []
+    for pivot in pivots:
+        tmp = list(filter(lambda pair: pair[1] > pivot, vocab_count.items()))
+        vocab_size.append(len(tmp))
+        count.append(sum(map(lambda pair: pair[1], tmp)))
+    print("Analyze vocab count:")
+    print("\tTotal vocab size {}, count: {}".format(vocab_size[0], count[0]))
+    print("\tRatio: ")
+    for cid in range(len(pivots)):
+        print("\t\t> {}: vocab size {}/{:.3f}, count {}/{:.3f}".format(
+            pivots[cid],
+            vocab_size[cid], vocab_size[cid] / vocab_size[0],
+            count[cid], count[cid] / count[0]
+        ))

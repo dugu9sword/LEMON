@@ -1,5 +1,11 @@
 dataset/*
 .idea/*
+word2vec/*
 
-logs/*
+*logs/*
 saved/*
+
+**/__pycache__/*
+
+
+*.json

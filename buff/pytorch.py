@@ -1,6 +1,7 @@
 from .public import *
 import torch
 from torch.nn.utils.rnn import PackedSequence
+from .logging import log
 
 __model_path__ = "saved/models"
 
@@ -12,6 +13,7 @@ def cast_list(array):
         return cast_list(np.array(array))
     if isinstance(array, np.ndarray):
         return array.squeeze().tolist()
+
 
 def set_gpu_device(device_id):
     torch.cuda.set_device(device_id)
@@ -102,32 +104,44 @@ def var2num(x):
 
 
 def load_word2vec(embedding: torch.nn.Embedding,
-                  word2vec_file,
                   word_dict: Dict[str, int],
+                  word2vec_path,
+                  norm=True,
                   cached_name=None):
-    cache = "{}".format(cached_name)
+    def __norm2one(vec):
+        root_sum_square = np.sqrt(np.sum(np.square(vec)))
+        return vec / root_sum_square
+
+    cache = "{}{}".format(cached_name, ".norm" if norm else "")
     if cached_name and exist_var(cache):
-        log("Load from cache {}".format(cache))
-        pre_word_embedding = load_var(cache)
+        log("Load vocab from cache {}".format(cache))
+        pre_embedding = load_var(cache)
     else:
-        pre_word_embedding = np.random.normal(0, 0.1, size=embedding.weight.size())
-        wordvec_file = open(word2vec_file, errors='ignore')
-        x = 0
+        log("Load vocab from {}".format(word2vec_path))
+        scale = np.sqrt(3.0 / embedding.embedding_dim)
+        pre_embedding = np.random.normal(0, 1, embedding.weight.size())
+        wordvec_file = open(word2vec_path, errors='ignore')
+        # x = 0
+        found = 0
         for line in wordvec_file.readlines():
-            x += 1
-            log("Process line {} in file {}".format(x, word2vec_file))
-            split = line.split(' ')
+            # x += 1
+            # log("Process line {} in file {}".format(x, word2vec_path))
+            split = re.split(r"\s+", line.strip())
+            # for word2vec, the first line is meta info: (NUMBER, SIZE)
             if len(split) < 10:
-                continue  # for word2vec, the first line is meta info: (NUMBER, SIZE)
-            if split[-1] == '\n':
-                split = split[:-1]
+                continue
             word = split[0]
-            emb = split[1:]
             if word in word_dict:
-                pre_word_embedding[word_dict[word]] = \
-                    np.array(list(map(float, emb)))
-        save_var(pre_word_embedding, cache)
-    embedding.weight.data.copy_(torch.from_numpy(pre_word_embedding))
+                found += 1
+                emb = list(map(float, split[1:]))
+                if norm:
+                    pre_embedding[word_dict[word]] = __norm2one(np.array(emb))
+                else:
+                    pre_embedding[word_dict[word]] = np.array(emb)
+        log("Pre_train match case: {:.4f}".format(found / len(word_dict)))
+        if cached_name:
+            save_var(pre_embedding, cache)
+    embedding.weight.data.copy_(torch.from_numpy(pre_embedding))
 
 
 def reverse_pack_padded_sequence(inputs, lengths, batch_first=False):
@@ -162,4 +176,4 @@ def reverse_pack_padded_sequence(inputs, lengths, batch_first=False):
             current_length = new_length
         if current_length is None:
             break
-    return PackedSequence(torch.cat(steps), batch_sizes)
+    return PackedSequence(torch.cat(steps), torch.tensor(batch_sizes))

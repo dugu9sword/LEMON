@@ -1,0 +1,16 @@
+{
+  "executor": "python",
+  "runnable": "main.py",
+  "cuda": [
+    0
+  ],
+  "concurrency": 6,
+  "configs": {
+    "==base==": {
+      "--max_span_length": 10,
+      "--max_sentence_length": 120
+    },
+    "==more==": [
+    ]
+  }
+}

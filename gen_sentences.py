@@ -1,3 +1,6 @@
+import re
+from buff import log, log_config
+
 def load_sentences(file_path, sep=r"\s+"):
     ret = []
     sentence = []
@@ -12,16 +15,8 @@ def load_sentences(file_path, sep=r"\s+"):
     return ret
 
 
-import torch
-
-
-class LL(torch.nn.Module):
-    def __init__(self):
-        super(LL, self).__init__()
-        self.w = torch.nn.Parameter(torch.Tensor(10, 10))
-
-
 if __name__ == '__main__':
-    import re
-    for x in LL().cuda().parameters():
-        print(x.size())
+    log_config("dev.sentences", 'cf')
+    sentences = load_sentences("dataset/OntoNotes4/dev.char.bmes")
+    for sid, sen in enumerate(sentences):
+        log("[{:>5}] {}".format(sid, "".join([ele[0] for ele in sen])))
