@@ -2,11 +2,13 @@ import re
 from typing import NamedTuple, List
 from buff import Color, log, log_config
 import os
+import numpy as np
 
 SpanPred = NamedTuple("SpanPred", [("bid", int),
                                    ("eid", int),
                                    ("lid", int),
-                                   ("score", float),
+                                   ("pred_prob", float),
+                                   ("gold_prob", float),
                                    ("pred_label", str),
                                    ("gold_label", str),
                                    ("fragment", str)])
@@ -29,7 +31,7 @@ class Decoder:
 
         # By threshold
         for i, span_pred in enumerate(results):
-            if span_pred.score < threshold:
+            if span_pred.pred_prob < threshold:
                 keep_flags[i] = False
 
         # Bigger is better
@@ -48,7 +50,7 @@ class Decoder:
                     if next_id == len(results):
                         continue
                     if results[next_id].bid <= results[i].eid:
-                        if results[next_id].score > results[i].score:
+                        if results[next_id].pred_prob > results[i].pred_prob:
                             keep_flags[i] = False
                         else:
                             keep_flags[next_id] = False
@@ -89,31 +91,32 @@ class Decoder:
         ma_pre = 0.
         ma_rec = 0.
         for entype in ['GPE', 'LOC', 'ORG', 'PER']:
-            pre = self.TP[entype] / (self.TP[entype] + self.FP[entype])
-            rec = self.TP[entype] / (self.TP[entype] + self.FN[entype])
+            pre = self.TP[entype] / (self.TP[entype] + self.FP[entype] + 1e-10)
+            rec = self.TP[entype] / (self.TP[entype] + self.FN[entype] + 1e-10)
             ma_pre += pre
             ma_rec += rec
             mi_pre = (mi_pre[0] + self.TP[entype], mi_pre[1] + self.TP[entype] + self.FP[entype])
             mi_rec = (mi_rec[0] + self.TP[entype], mi_rec[1] + self.TP[entype] + self.FN[entype])
-            f1 = 2 / (1 / pre + 1 / rec)
+            f1 = 2 * pre * rec / (pre + rec + 1e-10)
             if verbose:
                 log("{} pre: {:.4f} rec: {:.4f} f1:  {:.4f}".format(
                     entype, pre, rec, f1
                 ))
-        mi_pre = mi_pre[0] / mi_pre[1]
-        mi_rec = mi_rec[0] / mi_rec[1]
-        mi_f1 = 2 / (1 / mi_pre + 1 / mi_rec)
+        mi_pre = mi_pre[0] / (mi_pre[1] + 1e-10)
+        mi_rec = mi_rec[0] / (mi_rec[1] + 1e-10)
+        mi_f1 = 2 * mi_pre * mi_rec / (mi_pre + mi_rec + 1e-10)
         ma_pre /= 4
         ma_rec /= 4
-        ma_f1 = 2 / (1 / ma_pre + 1 / ma_rec)
+        ma_f1 = 2 * ma_pre * ma_rec / (ma_pre + ma_rec + 1e-10)
         if verbose:
             log("micro pre: {:.4f} rec: {:.4f} f1:  {:.4f}".format(mi_pre, mi_rec, mi_f1))
             log("macro pre: {:.4f} rec: {:.4f} f1:  {:.4f}".format(ma_pre, ma_rec, ma_f1))
-            log("ignore-class pre: {:.4f} rec: {:.4f} f1:  {:.4f}".format(
-                self.corr_num / self.pred_num,
-                self.corr_num / self.gold_num,
-                2 / (self.pred_num / self.corr_num + self.gold_num / self.corr_num)
-            ))
+
+            # log("ignore-class pre: {:.4f} rec: {:.4f} f1:  {:.4f}".format(
+            #     self.corr_num / (self.pred_num + 1e-10),
+            #     self.corr_num / (self.gold_num + 1e-10),
+            #     2 / (self.pred_num / (self.corr_num + 1e-10) + self.gold_num / (self.corr_num + 1e-10))
+            # ))
         return mi_pre, mi_rec, mi_f1
 
 
@@ -144,15 +147,17 @@ def decode_log(file_path="lstm.json.logs/last.task-4.txt",
                 results = []
                 if verbose:
                     log(line)
-            found = re.search(r"\s+(\d+)~(\d+)\s+(\d+)/(-\d*\.\d*)\s*([A-Z]+)/([A-Z]+)\s*([^\s]*)", line)
+            found = re.search(r"\s+(\d+)~(\d+)\s+(\d+)\s+(\d*\.\d*)/(\d*\.\d*)\s*([A-Z]+)/([A-Z]+)\s*([^\s]*)", line)
             if found:
                 results.append(SpanPred(bid=int(found.group(1)),
                                         eid=int(found.group(2)),
                                         lid=int(found.group(3)),
-                                        score=float(found.group(4)),
-                                        pred_label=found.group(5),
-                                        gold_label=found.group(6),
-                                        fragment=found.group(7)))
+                                        pred_prob=float(found.group(4)),
+                                        gold_prob=float(found.group(5)),
+                                        pred_label=found.group(6),
+                                        gold_label=found.group(7),
+                                        fragment=found.group(8)))
+                # print(results)
     return decoder.evaluate(verbose)
 
 
@@ -167,17 +172,34 @@ if __name__ == '__main__':
     #     except:
     #         mi_pre, mi_rec, mi_f1 = -1, -1, -1
     #     print("{} {} {} {}".format(file_idx, mi_pre, mi_rec, mi_f1))
-    # for epoch_id in range(5, 30):
+    # for file_id in range(0, 8):
     #     try:
-    #         print(epoch_id, decode_log(file_path="logs/main.txt",
-    #                          threshold=-4,
+    #         print(file_id,
+    #               decode_log(file_path="/home/zhouyi/Desktop/task.json.logs/task-{}.txt".format(file_id),
+    #                          threshold=-100,
     #                          verbose=False,
-    #                          epoch_id=epoch_id,
+    #                          epoch_id=29,
     #                          valid_set="dev_set"))
     #     except:
     #         pass
-    print(decode_log(file_path="logs/lstm-main.txt",
-                     threshold=-6,
-                     verbose=False,
-                     epoch_id=40,
-                     valid_set="dev_set"))
+    np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
+    results = np.zeros((4, 30), dtype=float)
+    for file_id in range(0, 4):
+        for epoch_id in range(0, 30):
+            try:
+                f1 = decode_log(
+                    file_path="/home/zhouyi/Desktop/task.json.logs/task-{}.txt".format(file_id),
+                    threshold=0,
+                    verbose=False,
+                    epoch_id=epoch_id,
+                    valid_set="dev_set")[2]
+                print(file_id, epoch_id, f1)
+                results[file_id, epoch_id] = f1
+            except:
+                pass
+    print(results)
+    # print(decode_log(file_path="/home/zhouyi/Desktop/task.json.logs/task-0.txt",
+    #                  threshold=-8,
+    #                  verbose=True,
+    #                  epoch_id=20,
+    #                  valid_set="dev_set"))

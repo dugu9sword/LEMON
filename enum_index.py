@@ -7,7 +7,7 @@ from typing import List
 """
 
 
-def gen_context_ids(lengths=(4, 2), max_span_len=3):
+def gen_inc_context_ids(lengths=(4, 2), max_span_len=3):
     """
     对于 [ABCD, EF]，用 RNN 从两个方向扫描，RNN 个数为 2，正反向分别为
             -->: Tensor(2, 4, dim)
@@ -26,7 +26,7 @@ def gen_context_ids(lengths=(4, 2), max_span_len=3):
     b2e_ids, e2b_ids = [], []
     base_row = 0
     for length in lengths:
-        it_b2e_1d, it_e2b_1d = _gen_context_ids(length, max_span_len)
+        it_b2e_1d, it_e2b_1d = _gen_inc_context_ids(length, max_span_len)
         b2e_ids.extend(list(map(lambda x: x + base_row, it_b2e_1d)))
         e2b_ids.extend(list(map(lambda x: x + base_row, it_e2b_1d)))
         base_row += max_len
@@ -34,7 +34,7 @@ def gen_context_ids(lengths=(4, 2), max_span_len=3):
 
 
 @lru_cache(maxsize=None)
-def _gen_context_ids(length=4, max_span_len=3):
+def _gen_inc_context_ids(length=4, max_span_len=3):
     # 保存 i 代表第 i 个 hidden state
     b2e_1d, e2b_1d = [], []
     for i in range(length):
@@ -45,9 +45,49 @@ def _gen_context_ids(length=4, max_span_len=3):
     return b2e_1d, e2b_1d
 
 
+def gen_exc_context_ids(lengths=(4, 2), max_span_len=3):
+    """
+    对于 [ABCD, EF]，用 RNN 从两个方向扫描，RNN 个数为 2，正反向分别为
+            -->: Tensor(2, 4, dim)
+                    ABCD, EF**
+                     ^: left exclusive context for [CD]
+                         1d index    : 1 <-- 该句子 RNN 的 1 个 hidden
+                         flatten idx : 1
+            <--: Tensor(2, 4, dim)
+                    DCBA, FE**
+                        ^:  right exclusive context for [CBA]
+                         1d index    : -1
+                         flatten idx : -1
+    将其 flatten 成 (8, dim)，用于后续的 index_select
+    """
+    max_len = max(lengths)
+    b2e_ids, e2b_ids = [], []
+    base_row = 0
+    for length in lengths:
+        it_b2e_1d, it_e2b_1d = _gen_exc_context_ids(length, max_span_len)
+        b2e_ids.extend(list(map(lambda x: x + base_row if x != -1 else -1, it_b2e_1d)))
+        e2b_ids.extend(list(map(lambda x: x + base_row if x != -1 else -1, it_e2b_1d)))
+        base_row += max_len
+    return b2e_ids, e2b_ids
+
+
+def _gen_exc_context_ids(length=4, max_span_len=3):
+    # 保存 i 代表第 i 个 hidden state
+    b2e_1d, e2b_1d = [], []
+    for i in range(length):
+        for j in range(max_span_len):
+            if i + j < length:
+                b2e_1d.append(i - 1)
+                e2b_1d.append(length - 1 - i - j - 1)
+    return b2e_1d, e2b_1d
+
+
 # x, y = gen_context_ids((4, 2, 3), 3)
 # print(x)
 # print(y)
+
+# print(_gen_exc_context_ids())
+# print(gen_exc_context_ids())
 
 
 def gen_fragment_ids(lengths=(4, 2), max_span_len=3):

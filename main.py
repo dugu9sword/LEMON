@@ -24,10 +24,10 @@ class ProgramArgs(argparse.Namespace):
         super(ProgramArgs, self).__init__()
         self.max_span_length = 10
         self.max_sentence_length = 120
-        self.char_count_gt = 0
+        self.char_count_gt = 2
         self.bichar_count_gt = 2
 
-        self.token_type = "plain"
+        self.token_type = "rnn"
 
         # embedding settings
         self.char_emb_size = 100
@@ -48,23 +48,22 @@ class ProgramArgs(argparse.Namespace):
         self.tfer_head_dim = 128
 
         # rnn config
-        self.rnn_cell_type = 'lstm'
         self.rnn_num_layer = 2
         self.rnn_hidden = 256
 
         # fragment encoder
         self.frag_type = "rnn"
         self.frag_fofe_alpha = 0.5
-        self.seq_rnn_cell = "lstm"
 
         # context encoder
-        self.ctx = 'off'
+        # self.ctx = 'off'
+        self.ctx = 'exclude'
 
         # loss
         self.focal_gamma = 0
 
         # development config
-        self.load_from_cache = False
+        self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full_train"
         self.epoch_max = 30
@@ -159,27 +158,32 @@ class Luban7(torch.nn.Module):
             token_dim = self.embeds.embedding_dim
         elif config.token_type == "rnn":
             self.token_encoder = BiRNNTokenEncoder(
-                cell_type=config.rnn_cell_type,
+                cell_type='lstm',
                 num_layers=config.rnn_num_layer,
                 input_size=self.embeds.embedding_dim,
                 hidden_size=config.rnn_hidden,
                 dropout=config.dropout,
             )
             token_dim = config.rnn_hidden
-        else:
+        elif config.token_type == 'plain':
             token_dim = self.embeds.embedding_dim
+        else:
+            raise Exception
 
         if config.frag_type == "rnn":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim),
-                e2b_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim)
+                b2e_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
+                e2b_encoder=RNNSeqEncoder('lstm', token_dim, token_dim)
             )
-            self.context_encoder = ContextEnumerator(
-                max_span_len=config.max_span_length,
-                b2e_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim),
-                e2b_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim)
-            )
+            if config.ctx in ['include', 'exclude']:
+                self.context_encoder = ContextEnumerator(
+                    max_span_len=config.max_span_length,
+                    b2e_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
+                    e2b_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
+                    out_size=token_dim,
+                    include=config.ctx == 'include'
+                )
         elif config.frag_type == "fofe":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
@@ -192,8 +196,11 @@ class Luban7(torch.nn.Module):
                 b2e_encoder=AverageSeqEncoder(),
                 e2b_encoder=AverageSeqEncoder()
             )
+        else:
+            raise Exception
+
         frag_dim = 2 * token_dim
-        if config.ctx == 'inclusive':
+        if config.ctx in ['include', 'exclude']:
             frag_dim += token_dim + token_dim
 
         self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim)
@@ -255,14 +262,18 @@ class Luban7(torch.nn.Module):
 
         frag_reprs = self.fragment_encoder(token_repr, text_lens)
 
-        if config.ctx == 'inclusive':
+        if config.ctx in ['include', 'exclude']:
             left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_repr, text_lens)
             frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
+        elif config.ctx == 'off':
+            pass
+        else:
+            raise Exception
 
         frag_reprs = self.non_linear(frag_reprs)
 
         span_ys = self.gen_span_ys(chars, labels)
-        score = F.log_softmax(frag_reprs @ self.label_weight + self.label_bias, dim=0)
+        score = frag_reprs @ self.label_weight + self.label_bias
         return score, span_ys
 
 
@@ -287,6 +298,8 @@ def enum_span_by_length(text_len):
 
 def main():
     log_config("main.txt", "cf")
+    for key, value in nsp.__dict__.items():
+        log("\t--{}={}".format(key, value))
     used_data_set = usable_data_sets[config.use_data_set]
     vocab_folder = "dataset/OntoNotes4/vocab.{}.{}".format(config.char_count_gt, config.bichar_count_gt)
     gen_vocab(data_path=used_data_set[0],
@@ -342,8 +355,12 @@ def main():
 
                 score, span_ys = luban7(batch_data)
 
-                loss = focal_loss(score, torch.tensor(span_ys).to(device))
-                # loss = F.nll_loss(score, torch.tensor(span_ys).to(device))
+                loss = focal_loss(score, torch.tensor(span_ys).to(device), gamma=config.focal_gamma)
+                score_probs = F.softmax(score, dim=1)
+
+                # loss_ce = F.cross_entropy(score, torch.tensor(span_ys).to(device))
+
+                # print(loss.item(), loss_ce.item())
                 # weight=torch.tensor([.1,.3,.3,.3]).to(gpu))
                 pred = cast_list(torch.argmax(score, 1).cpu().numpy())
                 # print_prf(pred, span_ys, list(idx2label.keys()))
@@ -354,7 +371,7 @@ def main():
                         "b: {:.4f} / c:{:.4f} / r: {:.4f} "
                             .format(progress.batch_time, progress.cost_time, progress.rest_time),
                         "loss: {:.4f}".format(loss.item()),
-                        "accuracy: {:.4f}".format(accuracy(score.detach().cpu().numpy(), span_ys))])
+                        "accuracy: {:.4f}".format(accuracy(score_probs.detach().cpu().numpy(), span_ys))])
                     )
                     # log(pred)
                     # log(span_ys)
@@ -383,6 +400,7 @@ def main():
                 text_lens = batch_lens(texts)
 
                 score, span_ys = luban7(batch_data)
+                score_probs = F.softmax(score, dim=1)
 
                 pred = cast_list(torch.argmax(score, 1))
 
@@ -399,9 +417,11 @@ def main():
                         begin_idx, end_idx = span
                         span_offset = sid + offset
                         if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                            to_log.append("{:>3}~{:<3}\t{:1}/{:.4f}\t{:>5}/{:<5}\t{}".format(
+                            to_log.append("{:>3}~{:<3}\t{:1}\t{:.4f}/{:.4f}\t{:>5}/{:<5}\t{}".format(
                                 begin_idx, end_idx,
-                                pred[span_offset], score[span_offset][pred[span_offset]],
+                                pred[span_offset],
+                                score_probs[span_offset][pred[span_offset]],
+                                score_probs[span_offset][span_ys[span_offset]],
                                 idx2label[pred[span_offset]],
                                 idx2label[span_ys[span_offset]],
                                 idx2str(batch_data[bid].chars[begin_idx: end_idx + 1]),

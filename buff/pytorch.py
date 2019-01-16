@@ -159,18 +159,19 @@ def flip_by_length(inputs, lengths):
 
 
 def focal_loss(inputs, targets, gamma=2, alpha=None, size_average=True):
-    N = inputs.size(0)
-    C = inputs.size(1)
-    P = F.softmax(inputs, dim=1)
+    batch_size = inputs.size(0)
+    num_classes = inputs.size(1)
+    prob = F.softmax(inputs, dim=1)
+    # prob = inputs.exp()
 
-    class_mask = inputs.data.new(N, C).fill_(0)
+    class_mask = inputs.data.new(batch_size, num_classes).fill_(0)
     ids = targets.view(-1, 1)
     class_mask.scatter_(1, ids.data, 1.)
     if alpha is None:
-        alpha = torch.ones(C, 1).to(inputs.device)
+        alpha = torch.ones(num_classes, 1).to(inputs.device)
     alpha = alpha[ids.data.view(-1)]
 
-    probs = (P * class_mask).sum(1).view(-1, 1)
+    probs = (prob * class_mask).sum(1).view(-1, 1)
 
     log_p = probs.log()
 
