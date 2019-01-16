@@ -1,6 +1,7 @@
 from .public import *
 import torch
 from torch.nn.utils.rnn import PackedSequence
+import torch.nn.functional as F
 from .logging import log
 
 __model_path__ = "saved/models"
@@ -144,36 +145,39 @@ def load_word2vec(embedding: torch.nn.Embedding,
     embedding.weight.data.copy_(torch.from_numpy(pre_embedding))
 
 
-def reverse_pack_padded_sequence(inputs, lengths, batch_first=False):
-    if lengths[-1] <= 0:
-        raise ValueError("length of all samples has to be greater than 0, "
-                         "but found an element in 'lengths' that is <=0")
-    if batch_first:
-        inputs = inputs.transpose(0, 1)
+def flip_by_length(inputs, lengths):
+    rev_inputs = []
+    for it_id, it_input in enumerate(inputs):
+        it_len = lengths[it_id]
+        rev_input = torch.cat([
+            it_input.index_select(0, torch.tensor(list(reversed(range(it_len)))).to(inputs.device)),
+            torch.zeros_like(it_input[it_len:]).to(inputs.device)
+        ])
+        rev_inputs.append(rev_input)
+    rev_inputs = torch.stack(rev_inputs)
+    return rev_inputs
 
-    steps = []
-    batch_sizes = []
-    lengths_iter = reversed(lengths)
-    current_length = next(lengths_iter)
-    batch_size = inputs.size(1)
-    if len(lengths) != batch_size:
-        raise ValueError("lengths array has incorrect size")
 
-    for step, step_value in enumerate(inputs, 1):
-        steps.append(step_value[:batch_size])
-        batch_sizes.append(batch_size)
+def focal_loss(inputs, targets, gamma=2, alpha=None, size_average=True):
+    N = inputs.size(0)
+    C = inputs.size(1)
+    P = F.softmax(inputs, dim=1)
 
-        while step == current_length:
-            try:
-                new_length = next(lengths_iter)
-            except StopIteration:
-                current_length = None
-                break
+    class_mask = inputs.data.new(N, C).fill_(0)
+    ids = targets.view(-1, 1)
+    class_mask.scatter_(1, ids.data, 1.)
+    if alpha is None:
+        alpha = torch.ones(C, 1).to(inputs.device)
+    alpha = alpha[ids.data.view(-1)]
 
-            if current_length > new_length:  # remember that new_length is the preceding length in the array
-                raise ValueError("lengths array has to be sorted in decreasing order")
-            batch_size -= 1
-            current_length = new_length
-        if current_length is None:
-            break
-    return PackedSequence(torch.cat(steps), torch.tensor(batch_sizes))
+    probs = (P * class_mask).sum(1).view(-1, 1)
+
+    log_p = probs.log()
+
+    batch_loss = -alpha * (torch.pow((1 - probs), gamma)) * log_p
+
+    if size_average:
+        loss = batch_loss.mean()
+    else:
+        loss = batch_loss.sum()
+    return loss

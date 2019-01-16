@@ -3,12 +3,15 @@
 from buff import *
 from typing import NamedTuple
 import torch
+from buff import focal_loss
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
 import os
 import math
 from collections import defaultdict
-from fragment_encoder import AllFragEncoder, RNNFragEncoder, FofeFragEncoder, AverageFragEncoder
+from frag_enumerator import FragmentEnumerator
+from context_enumerator import ContextEnumerator
+from seq_encoder import BaseSeqEncoder, RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 import socket
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
@@ -24,11 +27,11 @@ class ProgramArgs(argparse.Namespace):
         self.char_count_gt = 0
         self.bichar_count_gt = 2
 
-        self.token_type = "rnn"
+        self.token_type = "plain"
 
         # embedding settings
-        self.char_emb_size = 50
-        self.bichar_emb_size = 50
+        self.char_emb_size = 100
+        self.bichar_emb_size = 0
         self.seg_emb_size = 25
         self.dropout = 0.1
         # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
@@ -52,12 +55,20 @@ class ProgramArgs(argparse.Namespace):
         # fragment encoder
         self.frag_type = "rnn"
         self.frag_fofe_alpha = 0.5
-        self.frag_rnn_cell = "lstm"
+        self.seq_rnn_cell = "lstm"
+
+        # context encoder
+        self.ctx = 'off'
+
+        # loss
+        self.focal_gamma = 0
 
         # development config
         self.load_from_cache = False
         self.train_on = True
         self.use_data_set = "full_train"
+        self.epoch_max = 30
+        self.epoch_show_train = 25
 
 
 parser = argparse.ArgumentParser()
@@ -159,24 +170,31 @@ class Luban7(torch.nn.Module):
             token_dim = self.embeds.embedding_dim
 
         if config.frag_type == "rnn":
-            self.fragment_encoder = AllFragEncoder(
+            self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=RNNFragEncoder(config.frag_rnn_cell, token_dim, token_dim),
-                e2b_encoder=RNNFragEncoder(config.frag_rnn_cell, token_dim, token_dim)
+                b2e_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim),
+                e2b_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim)
+            )
+            self.context_encoder = ContextEnumerator(
+                max_span_len=config.max_span_length,
+                b2e_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim),
+                e2b_encoder=RNNSeqEncoder(config.seq_rnn_cell, token_dim, token_dim)
             )
         elif config.frag_type == "fofe":
-            self.fragment_encoder = AllFragEncoder(
+            self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=FofeFragEncoder(alpha=config.frag_fofe_alpha),
-                e2b_encoder=FofeFragEncoder(alpha=config.frag_fofe_alpha)
+                b2e_encoder=FofeSeqEncoder(alpha=config.frag_fofe_alpha),
+                e2b_encoder=FofeSeqEncoder(alpha=config.frag_fofe_alpha)
             )
         elif config.frag_type == "average":
-            self.fragment_encoder = AllFragEncoder(
+            self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=AverageFragEncoder(),
-                e2b_encoder=AverageFragEncoder()
+                b2e_encoder=AverageSeqEncoder(),
+                e2b_encoder=AverageSeqEncoder()
             )
         frag_dim = 2 * token_dim
+        if config.ctx == 'inclusive':
+            frag_dim += token_dim + token_dim
 
         self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim)
 
@@ -235,12 +253,16 @@ class Luban7(torch.nn.Module):
         else:
             token_repr = input_embs
 
-        span_reprs = self.fragment_encoder(token_repr, text_lens)
+        frag_reprs = self.fragment_encoder(token_repr, text_lens)
 
-        span_reprs = self.non_linear(span_reprs)
+        if config.ctx == 'inclusive':
+            left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_repr, text_lens)
+            frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
+
+        frag_reprs = self.non_linear(frag_reprs)
 
         span_ys = self.gen_span_ys(chars, labels)
-        score = F.log_softmax(span_reprs @ self.label_weight + self.label_bias, dim=0)
+        score = F.log_softmax(frag_reprs @ self.label_weight + self.label_bias, dim=0)
         return score, span_ys
 
 
@@ -300,14 +322,14 @@ def main():
     epoch_id = -1
     while True:
         epoch_id += 1
-        if epoch_id == 30:
+        if epoch_id == config.epoch_max:
             break
-        log("[EPOCH {}]".format(epoch_id))
 
         """
         Training
         """
         if config.train_on:
+            log(">>> epoch {} train".format(epoch_id))
             luban7.train()
             train_set.reset(shuffle=True)
             iter_id = 0
@@ -320,7 +342,8 @@ def main():
 
                 score, span_ys = luban7(batch_data)
 
-                loss = F.nll_loss(score, torch.tensor(span_ys).to(device))
+                loss = focal_loss(score, torch.tensor(span_ys).to(device))
+                # loss = F.nll_loss(score, torch.tensor(span_ys).to(device))
                 # weight=torch.tensor([.1,.3,.3,.3]).to(gpu))
                 pred = cast_list(torch.argmax(score, 1).cpu().numpy())
                 # print_prf(pred, span_ys, list(idx2label.keys()))
@@ -338,47 +361,56 @@ def main():
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
+            log("<<< epoch {} train".format(epoch_id))
 
         """
         Development
         """
         luban7.eval()
-        dev_set.reset(shuffle=False)
-        progress = ProgressManager(total=dev_set.size)
-        collector = Collector()
-        while not dev_set.finished:
-            batch_data = dev_set.next_batch(10, fill_batch=True)
-            batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)  # type: List[Datum]
+        sets_for_validation = {"dev_set": dev_set}
+        if epoch_id > config.epoch_show_train:
+            sets_for_validation["train_set"] = train_set
+        for set_name, set_for_validation in sets_for_validation.items():
+            log(">>> epoch {} validation on {}".format(epoch_id, set_name))
 
-            texts = list(map(lambda x: x[0], batch_data))
-            text_lens = batch_lens(texts)
+            set_for_validation.reset(shuffle=False)
+            progress = ProgressManager(total=set_for_validation.size)
+            while not set_for_validation.finished:
+                batch_data = set_for_validation.next_batch(10, fill_batch=True)
+                batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)  # type: List[Datum]
 
-            score, span_ys = luban7(batch_data)
+                texts = list(map(lambda x: x[0], batch_data))
+                text_lens = batch_lens(texts)
 
-            pred = cast_list(torch.argmax(score, 1))
+                score, span_ys = luban7(batch_data)
 
-            offset = 0
-            for bid in range(len(text_lens)):
-                log("[{:>4}] {}".format(
-                    progress.complete_num + bid,
-                    idx2str(batch_data[bid].chars)))
-                enum_spans = enum_span_by_length(text_lens[bid])
-                # fragment_score = score[offset: offset + len(enum_spans)]
-                # log(fragment_score)
-                for sid, span in enumerate(enum_spans):
-                    begin_idx, end_idx = span
-                    span_offset = sid + offset
-                    if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                        log("{:>3}~{:<3}\t{:1}/{:.4f}\t{:>5}/{:<5}\t{}".format(
-                            begin_idx, end_idx,
-                            pred[span_offset], score[span_offset][pred[span_offset]],
-                            idx2label[pred[span_offset]],
-                            idx2label[span_ys[span_offset]],
-                            idx2str(batch_data[bid].chars[begin_idx: end_idx + 1]),
-                        ))
-                offset += len(enum_spans)
+                pred = cast_list(torch.argmax(score, 1))
 
-            progress.update(len(batch_data))
+                offset = 0
+                to_log = []
+                for bid in range(len(text_lens)):
+                    to_log.append("[{:>4}] {}".format(
+                        progress.complete_num + bid,
+                        idx2str(batch_data[bid].chars)))
+                    enum_spans = enum_span_by_length(text_lens[bid])
+                    # fragment_score = score[offset: offset + len(enum_spans)]
+                    # log(fragment_score)
+                    for sid, span in enumerate(enum_spans):
+                        begin_idx, end_idx = span
+                        span_offset = sid + offset
+                        if pred[span_offset] != 0 or span_ys[span_offset] != 0:
+                            to_log.append("{:>3}~{:<3}\t{:1}/{:.4f}\t{:>5}/{:<5}\t{}".format(
+                                begin_idx, end_idx,
+                                pred[span_offset], score[span_offset][pred[span_offset]],
+                                idx2label[pred[span_offset]],
+                                idx2label[span_ys[span_offset]],
+                                idx2str(batch_data[bid].chars[begin_idx: end_idx + 1]),
+                            ))
+                    offset += len(enum_spans)
+                log("\n".join(to_log))
+                progress.update(len(batch_data))
+
+            log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
 
 if __name__ == '__main__':

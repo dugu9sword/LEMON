@@ -1,27 +1,11 @@
-def load_sentences(file_path, sep=r"\s+"):
-    ret = []
-    sentence = []
-    for line in open(file_path, encoding='utf8'):
-        line = line.strip("\n")
-        if line == "":
-            if not sentence == []:
-                ret.append(sentence)
-                sentence = []
-        else:
-            sentence.append(re.split(sep, line))
-    return ret
-
-
 import torch
+import torch.nn.functional as F
+from buff import focal_loss
 
+inputs = F.log_softmax(torch.randn(100, 4))
+print(inputs)
+targets = torch.randint(0, 4, (100, ))
+print(targets)
 
-class LL(torch.nn.Module):
-    def __init__(self):
-        super(LL, self).__init__()
-        self.w = torch.nn.Parameter(torch.Tensor(10, 10))
-
-
-if __name__ == '__main__':
-    import re
-    for x in LL().cuda().parameters():
-        print(x.size())
+print(F.nll_loss(inputs, targets))
+print(focal_loss(inputs, targets, gamma=0))

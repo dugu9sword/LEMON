@@ -117,46 +117,67 @@ class Decoder:
         return mi_pre, mi_rec, mi_f1
 
 
-def decode_log(file_path="lstm.json.logs/last.task-4.txt", threshold=-4, verbose=True):
+def decode_log(file_path="lstm.json.logs/last.task-4.txt",
+               threshold=-4,
+               verbose=True,
+               epoch_id=29,
+               valid_set="dev_set"):
     file = open(file_path)
 
     decoder = Decoder()
 
     results: List[SpanPred] = []
+    flag = False
     while True:
         line = file.readline()
         if line == '':
             break
         line = line.strip("\n")
-        if re.match(r"\[[^\d]*\d+\].*", line):
-            if len(results) != 0:
-                decoder.decode(results, threshold, verbose)
-            results = []
-            if verbose:
-                log(line)
-        found = re.search(r"\s+(\d+)~(\d+)\s+(\d+)/(-\d*\.\d*)\s*([A-Z]+)/([A-Z]+)\s*([^\s]*)", line)
-        if found:
-            results.append(SpanPred(bid=int(found.group(1)),
-                                    eid=int(found.group(2)),
-                                    lid=int(found.group(3)),
-                                    score=float(found.group(4)),
-                                    pred_label=found.group(5),
-                                    gold_label=found.group(6),
-                                    fragment=found.group(7)))
+        if line == ">>> epoch {} validation on {}".format(epoch_id, valid_set):
+            flag = True
+        if line == "<<< epoch {} validation on {}".format(epoch_id, valid_set):
+            break
+        if flag:
+            if re.match(r"\[[^\d]*\d+\].*", line):
+                if len(results) != 0:
+                    decoder.decode(results, threshold, verbose)
+                results = []
+                if verbose:
+                    log(line)
+            found = re.search(r"\s+(\d+)~(\d+)\s+(\d+)/(-\d*\.\d*)\s*([A-Z]+)/([A-Z]+)\s*([^\s]*)", line)
+            if found:
+                results.append(SpanPred(bid=int(found.group(1)),
+                                        eid=int(found.group(2)),
+                                        lid=int(found.group(3)),
+                                        score=float(found.group(4)),
+                                        pred_label=found.group(5),
+                                        gold_label=found.group(6),
+                                        fragment=found.group(7)))
     return decoder.evaluate(verbose)
 
 
 if __name__ == '__main__':
     log_config("verbose.txt", "cf")
-    folder = "/home/zhouyi/Desktop/pretrain/pretrain.json.logs/"
-    for file_idx in range(len(list(filter(lambda x: "last" in x, os.listdir(folder))))):
-        try:
-            mi_pre, mi_rec, mi_f1 = decode_log(file_path="{}/last.task-{}.txt".format(folder, file_idx),
-                                               threshold=-4,
-                                               verbose=False)
-        except:
-            mi_pre, mi_rec, mi_f1 = -1, -1, -1
-        print("{} {} {} {}".format(file_idx, mi_pre, mi_rec, mi_f1))
-    # decode_log(file_path="/home/zhouyi/Desktop/pretrain/server.json.logs/last.task-0.txt",
-    #            threshold=-10,
-    #            verbose=True)
+    # folder = "/home/zhouyi/Desktop/pretrain/pretrain.json.logs/"
+    # for file_idx in range(len(list(filter(lambda x: "last" in x, os.listdir(folder))))):
+    #     try:
+    #         mi_pre, mi_rec, mi_f1 = decode_log(file_path="{}/last.task-{}.txt".format(folder, file_idx),
+    #                                            threshold=-4,
+    #                                            verbose=False)
+    #     except:
+    #         mi_pre, mi_rec, mi_f1 = -1, -1, -1
+    #     print("{} {} {} {}".format(file_idx, mi_pre, mi_rec, mi_f1))
+    # for epoch_id in range(5, 30):
+    #     try:
+    #         print(epoch_id, decode_log(file_path="logs/main.txt",
+    #                          threshold=-4,
+    #                          verbose=False,
+    #                          epoch_id=epoch_id,
+    #                          valid_set="dev_set"))
+    #     except:
+    #         pass
+    print(decode_log(file_path="logs/lstm-main.txt",
+                     threshold=-6,
+                     verbose=False,
+                     epoch_id=40,
+                     valid_set="dev_set"))
