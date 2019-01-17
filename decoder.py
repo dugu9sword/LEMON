@@ -182,24 +182,28 @@ if __name__ == '__main__':
     #                          valid_set="dev_set"))
     #     except:
     #         pass
-    np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-    results = np.zeros((4, 30), dtype=float)
-    for file_id in range(0, 4):
-        for epoch_id in range(0, 30):
-            try:
-                f1 = decode_log(
-                    file_path="/home/zhouyi/Desktop/task.json.logs/task-{}.txt".format(file_id),
-                    threshold=0,
-                    verbose=False,
-                    epoch_id=epoch_id,
-                    valid_set="dev_set")[2]
-                print(file_id, epoch_id, f1)
-                results[file_id, epoch_id] = f1
-            except:
-                pass
-    print(results)
-    # print(decode_log(file_path="/home/zhouyi/Desktop/task.json.logs/task-0.txt",
-    #                  threshold=-8,
-    #                  verbose=True,
-    #                  epoch_id=20,
-    #                  valid_set="dev_set"))
+
+    # np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
+    # file_num = 4
+    # results = np.zeros((file_num, 60), dtype=float)
+    # for file_id in range(0, file_num):
+    #     for epoch_id in range(0, 60):
+    #         try:
+    #             f1 = decode_log(
+    #                 file_path="/home/zhouyi/Desktop/ctx.json.logs/task-{}.txt".format(file_id),
+    #                 threshold=0,
+    #                 verbose=False,
+    #                 epoch_id=epoch_id,
+    #                 valid_set="dev_set")[2]
+    #             print(file_id, epoch_id, f1)
+    #             results[file_id, epoch_id] = f1
+    #         except:
+    #             pass
+    # print(results)
+
+    for i in range(30):
+        print(decode_log(file_path="/home/zhouyi/Desktop/bichar.json.logs/task-0.txt",
+                         threshold=-8,
+                         verbose=False,
+                         epoch_id=i,
+                         valid_set="dev_set"))

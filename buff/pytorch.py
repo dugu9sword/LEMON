@@ -65,8 +65,8 @@ def save_model(model, saved_model_name, checkpoint):
     return checkpoint + 1
 
 
-class TimingSaver:
-    def __init__(self, model, model_name, seconds, init_ckpt=-1):
+class ModelManager:
+    def __init__(self, model, model_name, seconds=-1, init_ckpt=-1):
         self.model = model
         self.model_name = model_name
         self.seconds = seconds

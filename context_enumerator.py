@@ -44,6 +44,9 @@ class ContextEnumerator(torch.nn.Module):
             b2e_outputs = torch.cat([b2e_outputs, self.b_start_tensor], dim=0)
             e2b_outputs = torch.cat([e2b_outputs, self.e_start_tensor], dim=0)
 
+            # print(self.b_start_tensor[0][:10])
+            # print(b2e_outputs[0][:10])
+
             left_contexts = b2e_outputs.index_select(0, torch.tensor(b2e_ids).to(inputs.device))
             right_contexts = e2b_outputs.index_select(0, torch.tensor(e2b_ids).to(inputs.device))
 

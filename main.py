@@ -2,6 +2,7 @@
 
 from buff import *
 from typing import NamedTuple
+from torch.nn.utils import clip_grad_norm_
 import torch
 from buff import focal_loss
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -30,7 +31,7 @@ class ProgramArgs(argparse.Namespace):
         self.token_type = "rnn"
 
         # embedding settings
-        self.char_emb_size = 100
+        self.char_emb_size = 50
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
         self.dropout = 0.1
@@ -57,7 +58,7 @@ class ProgramArgs(argparse.Namespace):
 
         # context encoder
         # self.ctx = 'off'
-        self.ctx = 'exclude'
+        self.ctx = 'off'
 
         # loss
         self.focal_gamma = 0
@@ -68,6 +69,7 @@ class ProgramArgs(argparse.Namespace):
         self.use_data_set = "full_train"
         self.epoch_max = 30
         self.epoch_show_train = 25
+        self.model_name = "luban7"
 
 
 parser = argparse.ArgumentParser()
@@ -330,6 +332,8 @@ def main():
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
     opt = torch.optim.Adam(luban7.parameters(), lr=0.001)
+    manager = ModelManager(luban7, config.model_name) \
+        if config.model_name != "off" else None
     # opt = torch.optim.SGD(luban7.parameters(), lr=0.1, momentum=0.9)
 
     epoch_id = -1
@@ -370,15 +374,19 @@ def main():
                         "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
                         "b: {:.4f} / c:{:.4f} / r: {:.4f} "
                             .format(progress.batch_time, progress.cost_time, progress.rest_time),
-                        "loss: {:.4f}".format(loss.item()),
+                        "loss: {:.4f} ".format(loss.item()),
                         "accuracy: {:.4f}".format(accuracy(score_probs.detach().cpu().numpy(), span_ys))])
                     )
                     # log(pred)
                     # log(span_ys)
                 opt.zero_grad()
                 loss.backward()
+                clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
             log("<<< epoch {} train".format(epoch_id))
+
+        if isinstance(manager, ModelManager):
+            manager.save()
 
         """
         Development
