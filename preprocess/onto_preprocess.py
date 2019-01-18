@@ -1,6 +1,8 @@
 import os
 import re
 from collections import OrderedDict
+from typing import List
+import pdb
 
 
 def load_sentences(file_path):
@@ -17,8 +19,8 @@ def load_sentences(file_path):
     return ret
 
 
-# root_path = "/home/zhouyi/hdd/NER/ontonotes-release-4.0/data/files/data/chinese/annotations/"
-root_path = "/mnt/c/Users/zhouyi/Desktop/ontonotes-release-4.0/data/files/data/chinese/annotations/"
+root_path = "/home/zhouyi/hdd/NER/ontonotes-release-4.0/data/files/data/chinese/annotations/"
+# root_path = "/mnt/c/Users/zhouyi/Desktop/ontonotes-release-4.0/data/files/data/chinese/annotations/"
 
 files = []
 for path, d, filelist in os.walk(root_path):
@@ -75,51 +77,58 @@ def extract_ner(raw_str, keep_labels=("PERSON", "GPE", "ORG", "LOC")):
 
 from buff import log, log_config
 
-log_config("train.txt", "cf")
-# log_config("dev.txt", "cf")
-# log_config("test.txt", "cf")
+train_file = open("train.word.bmes", "w", encoding="utf8")
+dev_file = open("dev.word.bmes", "w", encoding="utf8")
+test_file = open("test.word.bmes", "w", encoding="utf8")
 
 train_num = 0
 dev_num = 0
 test_num = 0
 for idx in ner_files:
-    # print(ner_files[idx])
-    ner_lines = open(ner_files[idx], encoding='utf8').readlines()
-    # print(tag_files[idx])
-    tag_lines = load_sentences(tag_files[idx])
-    # print(len(tag_lines))
-    # print(tag_lines)
-    # print(len(ner_lines))
+    net_sentence_lst = open(ner_files[idx], encoding='utf8').readlines()[1:-1]
+    tag_word_lst_lst = load_sentences(tag_files[idx])  # type: List[List[str]]
 
-    # print(ner_pairs)
-    # if "暨" in line:
-    #     break
-
-    if "chtb" not in idx:
-        train_num += len(tag_lines)
-        for line_id in range(1, len(ner_lines) - 1):
-            tag_line_no = 0
-
-            ner_line = ner_lines[line_id]
-            tag_line = tag_lines[line_id - 1]
-            ner_pairs = extract_ner(ner_line)
-            for ele in ner_pairs:
-                # print(tag_line[tag_line_no])
+    for ner_line_idx in range(len(net_sentence_lst)):
+        ner_sentence = net_sentence_lst[ner_line_idx].strip("\n")  # type:str
+        tag_word_lst = tag_word_lst_lst[ner_line_idx]  # type:List[str]
+        ner_pairs = extract_ner(ner_sentence)
+        print(ner_sentence)
+        print(tag_word_lst)
+        word_results = []
+        for ele in ner_pairs:
+            tag_word_idx = 0
+            try:
                 while True:
                     # print(tag_line[tag_line_no])
-                    found_tag = re.search(r'\(([^\s]+)\s+{}\)'.format(ele[0]), tag_line[tag_line_no])
-                    tag_line_no += 1
+                    if ele[0] in ["?", ".", "(", ")", "$"]:
+                        found_tag = re.search(r'\(([^\s]+)\s+{}\)'.format("\\" + ele[0]),
+                                              tag_word_lst[tag_word_idx])
+                    else:
+                        found_tag = re.search(r'\(([^\s]+)\s+{}\)'.format(ele[0]),
+                                              tag_word_lst[tag_word_idx])
+                    tag_word_idx += 1
                     if found_tag:
                         break
-                log("{} {} {}".format(ele[0], ele[1], found_tag.group(1)))
-                # print(ele[0], found_tag.group(1))
-            # exit()
-            log()
-    else:
-        if re.match(".*[13579]$", idx):
-            print(idx)
-            dev_num += len(tag_lines)
+            except:
+                pdb.set_trace()
+            word_results.append((ele[0], found_tag.group(1), ele[1][:5]))
+
+        if "chtb" not in idx:
+            fd = train_file
+            train_num += len(tag_word_lst_lst)
         else:
-            test_num += len(tag_lines)
+            if re.match(".*[13579]$", idx):
+                fd = dev_file
+                dev_num += len(tag_word_lst_lst)
+            else:
+                fd = test_file
+                test_num += len(tag_word_lst_lst)
+        for ele in word_results:
+            line = "{} {} {}\n".format(ele[0], ele[1], ele[2])
+            # line = "{} {}\n".format(ele[0], ele[2])
+            fd.write(line)
+        fd.write("\n")
+        # print(ele[0], found_tag.group(1))
+        # exit()
 
 print(train_num, dev_num, test_num)

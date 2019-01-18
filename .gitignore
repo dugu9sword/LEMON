@@ -11,3 +11,5 @@ saved/*
 *.json
 
 nogit/*
+
+*.bmes
