@@ -3,6 +3,7 @@ import re
 from collections import OrderedDict
 from typing import List
 import pdb
+from collections import defaultdict
 
 
 def load_sentences(file_path):
@@ -18,6 +19,53 @@ def load_sentences(file_path):
             sentence.append(line)
     return ret
 
+
+"""
+Verb, adjective (4): VA, VC, VE, VV.
+Noun (3): NR, NT, NN.
+Localizer (1) : LC.
+Pronoun (1) : PN.
+Determiner and number (3): DT, CD, OD.
+Measure word (1): M.
+Adverb (1): AD.
+Preposition (1): P.
+Conjunction (2): CC, CS.
+Particle (8): DEC, DEG, DER, DEV, SP, AS, ETC, SP, MSP.
+Others (8): IJ, ON, PU, JJ, FW, LB, SB, BA
+"""
+mapping_tags = defaultdict(lambda: "OTHER", {
+    "VA": "ADJ", "JJ": "ADJ",
+
+    "VC": "VERB", "VE": "VERB", "VV": "VERB",
+
+    "NR": "NR", "NT": "NT", "NN": "NN",
+
+    "LC": "LOC",
+
+    "PN": "PN",
+
+    "DT": "DET", "CD": "DET", "OD": "DET",
+
+    "M": "M",
+
+    "AD": "ADV",
+
+    "P": "PREP",
+
+    "CC": "CONJ", "CS": "CONJ",
+
+    "DEC": "PARTICLE", "DEG": "PARTICLE", "DER": "PARTICLE", "DEV": "PARTICLE",
+    "AS": "PARTICLE", "ETC": "PARTICLE", "SP": "PARTICLE", "MSP": "PARTICLE",
+
+    "PU": "PUNC",
+
+    "FW": "PUNC",
+
+    "LB": "BA", "SB": "BA", "BA": "BA",
+
+    "IJ": "IJ", "ON": "ON",
+
+})
 
 root_path = "/home/zhouyi/hdd/NER/ontonotes-release-4.0/data/files/data/chinese/annotations/"
 # root_path = "/mnt/c/Users/zhouyi/Desktop/ontonotes-release-4.0/data/files/data/chinese/annotations/"
@@ -111,7 +159,11 @@ for idx in ner_files:
                         break
             except:
                 pdb.set_trace()
-            word_results.append((ele[0], found_tag.group(1), ele[1][:5]))
+            postag = found_tag.group(1)
+            if "-SHORT" in postag:
+                postag = postag[:-6]
+            postag = mapping_tags[postag]
+            word_results.append((ele[0], postag, ele[1][:5]))
 
         if "chtb" not in idx:
             fd = train_file

@@ -16,7 +16,7 @@ from seq_encoder import BaseSeqEncoder, RNNSeqEncoder, FofeSeqEncoder, AverageSe
 import socket
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
-from dataset import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets
+from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 
 
@@ -34,6 +34,8 @@ class ProgramArgs(argparse.Namespace):
         self.char_emb_size = 50
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
+        self.pos_emb_size = 0
+        self.pos_bmes = 'off'
         self.dropout = 0.1
         # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
         # self.char_emb_pretrain = "word2vec/sgns/sgns.merge.char"
@@ -62,14 +64,16 @@ class ProgramArgs(argparse.Namespace):
 
         # loss
         self.focal_gamma = 0
+        self.focal_reduction = "mean"
 
         # development config
-        self.load_from_cache = True
+        self.load_from_cache = False
         self.train_on = True
-        self.use_data_set = "full_train"
-        self.epoch_max = 30
+        self.use_data_set = "full"
+        self.epoch_max = 50
         self.epoch_show_train = 25
-        self.model_name = "luban7"
+        self.model_name = "off"
+        self.model_ckpt = -1
 
 
 parser = argparse.ArgumentParser()
@@ -112,6 +116,7 @@ class Luban7(torch.nn.Module):
                  bichar2idx,
                  seg2idx,
                  label2idx,
+                 pos2idx,
                  longest_text_len,
                  ):
         super(Luban7, self).__init__()
@@ -119,13 +124,16 @@ class Luban7(torch.nn.Module):
         self.bichar2idx = bichar2idx
         self.seg2idx = seg2idx
         self.label2idx = label2idx
+        self.pos2idx = pos2idx
 
         self.embeds = MixEmbedding(char_vocab_size=len(char2idx),
                                    char_emb_size=config.char_emb_size,
                                    seg_vocab_size=len(seg2idx),
                                    seg_emb_size=config.seg_emb_size,
                                    bichar_vocab_size=len(bichar2idx),
-                                   bichar_emb_size=config.bichar_emb_size)
+                                   bichar_emb_size=config.bichar_emb_size,
+                                   pos_vocab_size=len(pos2idx),
+                                   pos_emb_size=config.pos_emb_size)
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
                           word2vec_path=config.char_emb_pretrain,
@@ -239,20 +247,24 @@ class Luban7(torch.nn.Module):
         chars = list(map(lambda x: x[0], batch_data))
         bichars = list(map(lambda x: x[1], batch_data))
         segs = list(map(lambda x: x[2], batch_data))
-        labels = list(map(lambda x: x[3], batch_data))
+        poss = list(map(lambda x: x[3], batch_data))
+        labels = list(map(lambda x: x[4], batch_data))
         text_lens = batch_lens(chars)
 
         pad_chars = batch_pad(chars, self.char2idx['<PAD>'])
         pad_bichars = batch_pad(bichars, self.bichar2idx['<PAD>'])
         pad_segs = batch_pad(segs, self.seg2idx['<PAD>'])
+        pad_poss = batch_pad(poss, self.pos2idx['<PAD>'])
 
         pad_chars_tensor = torch.tensor(pad_chars).to(device)
         pad_bichars_tensor = torch.tensor(pad_bichars).to(device)
         pad_segs_tensor = torch.tensor(pad_segs).to(device)
+        pad_poss_tensor = torch.tensor(pad_poss).to(device)
 
         input_embs = self.embeds(pad_chars_tensor,
                                  pad_bichars_tensor,
-                                 pad_segs_tensor)
+                                 pad_segs_tensor,
+                                 pad_poss_tensor)
 
         if config.token_type == 'rnn':
             token_repr = self.token_encoder(input_embs, text_lens)
@@ -303,25 +315,32 @@ def main():
     for key, value in nsp.__dict__.items():
         log("\t--{}={}".format(key, value))
     used_data_set = usable_data_sets[config.use_data_set]
-    vocab_folder = "dataset/OntoNotes4/vocab.{}.{}".format(config.char_count_gt, config.bichar_count_gt)
+    vocab_folder = "dataset/ontonotes4/vocab.{}.{}.{}".format(
+        config.char_count_gt, config.bichar_count_gt, config.pos_bmes)
     gen_vocab(data_path=used_data_set[0],
               out_folder=vocab_folder,
               char_count_gt=config.char_count_gt,
               bichar_count_gt=config.bichar_count_gt,
-              use_cache=config.load_from_cache)
+              use_cache=config.load_from_cache,
+              ignore_tag_bmes=config.pos_bmes == 'off')
     char2idx, idx2char = load_vocab("{}/char.vocab".format(vocab_folder))
     bichar2idx, idx2bichar = load_vocab("{}/bichar.vocab".format(vocab_folder))
     seg2idx, idx2seg = load_vocab("{}/seg.vocab".format(vocab_folder))
+    pos2idx, idx2pos = load_vocab("{}/pos.vocab".format(vocab_folder))
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
-    train_set = ConllDataSet(ner_path=used_data_set[0], seg_path=used_data_set[1],
-                             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx, label2idx=label2idx,
+    train_set = ConllDataSet(data_path=used_data_set[0],
+                             char2idx=char2idx, bichar2idx=bichar2idx,
+                             seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+                             ignore_pos_bmes=config.pos_bmes == 'off',
                              max_text_len=config.max_sentence_length,
                              max_span_len=config.max_span_length,
                              sort_by_length=True)
-    dev_set = ConllDataSet(ner_path=used_data_set[2], seg_path=used_data_set[3],
-                           char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx, label2idx=label2idx,
+    dev_set = ConllDataSet(data_path=used_data_set[1],
+                           char2idx=char2idx, bichar2idx=bichar2idx,
+                           seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+                           ignore_pos_bmes=config.pos_bmes == 'off',
                            sort_by_length=False)
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
     longest_text_len = max(train_set.longest_text_len, dev_set.longest_text_len)
@@ -329,10 +348,11 @@ def main():
     luban7 = Luban7(char2idx=char2idx,
                     bichar2idx=bichar2idx,
                     seg2idx=seg2idx,
+                    pos2idx=pos2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
     opt = torch.optim.Adam(luban7.parameters(), lr=0.001)
-    manager = ModelManager(luban7, config.model_name) \
+    manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
     # opt = torch.optim.SGD(luban7.parameters(), lr=0.1, momentum=0.9)
 

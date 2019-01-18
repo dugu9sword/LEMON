@@ -1,9 +1,11 @@
 import re
 
-in_file_path = "test.word.bmes"
-out_file_path = "test.char.bmes"
-out_file = open(out_file_path, "w")
-
+in_file_path = "train.word.bmes"
+out_file_path = "train.{}.bmes"
+mix_out_file = open(out_file_path.format("mix"), "w")
+# seg_out_file = open(out_file_path.format("seg"), "w")
+# tag_out_file = open(out_file_path.format("tag"), "w")
+# ner_out_file = open(out_file_path.format("ner"), "w")
 
 # CHAR SEG POS NER
 
@@ -70,6 +72,14 @@ for sentence in sentences:
                     else:
                         char_results.append((token[0][i], "M", "M-" + token[1], token[2]))
     for ele in char_results:
-        print(ele[0], ele[1], ele[2], ele[3], file=out_file)
-    print(file=out_file)
+        print(ele[0], ele[1], ele[2], ele[3], file=mix_out_file)
+        # print(ele[0], ele[1], file=seg_out_file)
+        # print(ele[0], ele[2], file=tag_out_file)
+        # print(ele[0], ele[3], file=ner_out_file)
+
+    print(file=mix_out_file)
+    # print(file=seg_out_file)
+    # print(file=tag_out_file)
+    # print(file=ner_out_file)
+
     # exit()

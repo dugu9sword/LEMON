@@ -158,10 +158,12 @@ def flip_by_length(inputs, lengths):
     return rev_inputs
 
 
-def focal_loss(inputs, targets, gamma=2, alpha=None, size_average=True):
+def focal_loss(inputs,
+               targets,
+               gamma=2, alpha=None, reduction="mean"):
     batch_size = inputs.size(0)
     num_classes = inputs.size(1)
-    prob = F.softmax(inputs, dim=1)
+    prob = F.softmax(inputs, dim=1).clamp(1e-5, 1.)
     # prob = inputs.exp()
 
     class_mask = inputs.data.new(batch_size, num_classes).fill_(0)
@@ -177,8 +179,16 @@ def focal_loss(inputs, targets, gamma=2, alpha=None, size_average=True):
 
     batch_loss = -alpha * (torch.pow((1 - probs), gamma)) * log_p
 
-    if size_average:
+    if reduction == "mean":
         loss = batch_loss.mean()
-    else:
+    elif reduction == "sum":
         loss = batch_loss.sum()
+    elif reduction == "zheng":
+        pred = torch.argmax(inputs, dim=1)
+        ce_mask = pred != targets
+        loss = torch.mean(batch_loss * ce_mask)
+    elif reduction == "none":
+        loss = batch_loss
+    else:
+        raise Exception()
     return loss

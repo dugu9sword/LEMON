@@ -201,9 +201,9 @@ if __name__ == '__main__':
     #             pass
     # print(results)
 
-    for i in range(30):
-        print(decode_log(file_path="/home/zhouyi/Desktop/bichar.json.logs/task-0.txt",
+    for i in range(29, 30):
+        print(decode_log(file_path="/home/zhouyi/Desktop/pos.json.logs/task-0.txt",
                          threshold=-8,
-                         verbose=False,
+                         verbose=True,
                          epoch_id=i,
                          valid_set="dev_set"))

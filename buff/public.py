@@ -65,14 +65,12 @@ def auto_create(name, func, override=False, path=__saved_path__):
     return obj
 
 
-#
-# @contextmanager
-# def time_record(name, show_time_record=False):
-#     start = time.time()
-#     yield
-#     end = time.time()
-#     if show_time_record:
-#         log("Context [{}] cost {:.3} seconds".format(name, end - start))
+@contextmanager
+def time_record():
+    start = time.time()
+    yield
+    end = time.time()
+    print("cost {:.3} seconds".format(end - start))
 
 
 class ProgressManager:
