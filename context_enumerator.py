@@ -7,13 +7,13 @@ from enum_index import gen_inc_context_ids, gen_exc_context_ids
 class ContextEnumerator(torch.nn.Module):
     def __init__(self,
                  max_span_len,
-                 b2e_encoder,
-                 e2b_encoder,
+                 encoder_cls,
+                 encoder_args,
                  out_size,
                  include=True):
         super(ContextEnumerator, self).__init__()
-        self.b2e_encoder = b2e_encoder  # type: BaseSeqEncoder
-        self.e2b_encoder = e2b_encoder  # type: BaseSeqEncoder
+        self.b2e_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
+        self.e2b_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
         self.max_span_len = max_span_len
         self.out_size = out_size
         self.include = include

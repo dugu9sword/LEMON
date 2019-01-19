@@ -34,9 +34,8 @@ class ProgramArgs(argparse.Namespace):
         self.char_emb_size = 50
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
-        self.pos_emb_size = 0
+        self.pos_emb_size = 25
         self.pos_bmes = 'off'
-        self.dropout = 0.1
         # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
         # self.char_emb_pretrain = "word2vec/sgns/sgns.merge.char"
         # self.char_emb_pretrain = "word2vec/fasttext/wiki.zh.vec"
@@ -64,15 +63,22 @@ class ProgramArgs(argparse.Namespace):
 
         # loss
         self.focal_gamma = 0
-        self.focal_reduction = "zheng"
+        self.focal_reduction = "mean"
+
+        # regularization
+        self.drop_embed = 0.1
+        self.drop_token = 0.1
+        # self.drop_frag = 0.1
+        self.drop_nonlinear = 0.1
+        self.weight_decay = 1e-5
 
         # development config
-        self.batch_size = 30
+        self.batch_size = 32
         self.load_from_cache = False
         self.train_on = True
         self.use_data_set = "full"
-        self.epoch_max = 50
-        self.epoch_show_train = 25
+        self.epoch_max = 30
+        self.epoch_show_train = 60
         self.model_name = "off"
         self.model_ckpt = -1
 
@@ -99,14 +105,16 @@ else:
 
 
 class NonLinearLayer(torch.nn.Module):
-    def __init__(self, d_in, d_hidden):
+    def __init__(self, d_in, d_hidden, dropout):
         super(NonLinearLayer, self).__init__()
         self.fc1 = torch.nn.Linear(d_in, d_hidden)
         self.fc2 = torch.nn.Linear(d_hidden, d_in)
+        self.drop = torch.nn.Dropout(dropout)
 
     def forward(self, x):
         out = self.fc2(F.relu(self.fc1(x)))
         out += x
+        out = self.drop(out)
         # out = torch.nn.LayerNorm(out)
         return out
 
@@ -161,7 +169,7 @@ class Luban7(torch.nn.Module):
                 n_layers=config.tfer_num_layer,
                 n_head=config.tfer_num_head,
                 d_head=config.tfer_head_dim,
-                dropout=config.dropout
+                dropout=config.drop_token
             )
             token_dim = self.embeds.embedding_dim
         elif config.token_type == "rnn":
@@ -170,7 +178,7 @@ class Luban7(torch.nn.Module):
                 num_layers=config.rnn_num_layer,
                 input_size=self.embeds.embedding_dim,
                 hidden_size=config.rnn_hidden,
-                dropout=config.dropout,
+                dropout=config.drop_token
             )
             token_dim = config.rnn_hidden
         elif config.token_type == 'plain':
@@ -181,28 +189,29 @@ class Luban7(torch.nn.Module):
         if config.frag_type == "rnn":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
-                e2b_encoder=RNNSeqEncoder('lstm', token_dim, token_dim)
+                encoder_cls=RNNSeqEncoder,
+                encoder_args=('lstm', token_dim, token_dim),
+
             )
             if config.ctx in ['include', 'exclude']:
                 self.context_encoder = ContextEnumerator(
                     max_span_len=config.max_span_length,
-                    b2e_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
-                    e2b_encoder=RNNSeqEncoder('lstm', token_dim, token_dim),
+                    encoder_cls=RNNSeqEncoder,
+                    encoder_args=('lstm', token_dim, token_dim),
                     out_size=token_dim,
                     include=config.ctx == 'include'
                 )
         elif config.frag_type == "fofe":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=FofeSeqEncoder(alpha=config.frag_fofe_alpha),
-                e2b_encoder=FofeSeqEncoder(alpha=config.frag_fofe_alpha)
+                encoder_cls=FofeSeqEncoder,
+                encoder_args=(config.frag_fofe_alpha,)
             )
         elif config.frag_type == "average":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
-                b2e_encoder=AverageSeqEncoder(),
-                e2b_encoder=AverageSeqEncoder()
+                encoder_cls=AverageSeqEncoder,
+                encoder_args=(),
             )
         else:
             raise Exception
@@ -211,15 +220,14 @@ class Luban7(torch.nn.Module):
         if config.ctx in ['include', 'exclude']:
             frag_dim += token_dim + token_dim
 
-        self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim)
+        self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim, dropout=config.drop_nonlinear)
 
         self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
 
         std = 1. / math.sqrt(self.label_weight.size(1))
         self.label_weight.data.uniform_(-std, std)
-        if self.label_bias is not None:
-            self.label_bias.data.uniform_(-std, std)
+        self.label_bias.data.uniform_(-std, std)
 
     @staticmethod
     def gen_span_ys(texts, labels):
@@ -349,7 +357,7 @@ def main():
                     pos2idx=pos2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
-    opt = torch.optim.Adam(luban7.parameters(), lr=0.001)
+    opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
     # opt = torch.optim.SGD(luban7.parameters(), lr=0.1, momentum=0.9)
@@ -382,12 +390,8 @@ def main():
                                   gamma=config.focal_gamma)
                 score_probs = F.softmax(score, dim=1)
 
-                # loss_ce = F.cross_entropy(score, torch.tensor(span_ys).to(device))
-
-                # print(loss.item(), loss_ce.item())
-                # weight=torch.tensor([.1,.3,.3,.3]).to(gpu))
                 pred = cast_list(torch.argmax(score, 1).cpu().numpy())
-                # print_prf(pred, span_ys, list(idx2label.keys()))
+
                 progress.update(len(batch_data))
                 if iter_id % 1 == 0:
                     log("".join([
@@ -397,8 +401,6 @@ def main():
                         "loss: {:.4f} ".format(loss.item()),
                         "accuracy: {:.4f}".format(accuracy(score_probs.detach().cpu().numpy(), span_ys))])
                     )
-                    # log(pred)
-                    # log(span_ys)
                 opt.zero_grad()
                 loss.backward()
                 clip_grad_norm_(luban7.parameters(), 5)
@@ -411,54 +413,55 @@ def main():
         """
         Development
         """
-        luban7.eval()
-        sets_for_validation = {"dev_set": dev_set}
-        if epoch_id > config.epoch_show_train:
-            sets_for_validation["train_set"] = train_set
-        for set_name, set_for_validation in sets_for_validation.items():
-            log(">>> epoch {} validation on {}".format(epoch_id, set_name))
+        with torch.no_grad():
+            luban7.eval()
+            sets_for_validation = {"dev_set": dev_set}
+            if epoch_id > config.epoch_show_train:
+                sets_for_validation["train_set"] = train_set
+            for set_name, set_for_validation in sets_for_validation.items():
+                log(">>> epoch {} validation on {}".format(epoch_id, set_name))
 
-            set_for_validation.reset(shuffle=False)
-            progress = ProgressManager(total=set_for_validation.size)
-            while not set_for_validation.finished:
-                batch_data = set_for_validation.next_batch(10, fill_batch=True)
-                batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)  # type: List[Datum]
+                set_for_validation.reset(shuffle=False)
+                progress = ProgressManager(total=set_for_validation.size)
+                while not set_for_validation.finished:
+                    batch_data = set_for_validation.next_batch(10, fill_batch=True)
+                    batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)  # type: List[Datum]
 
-                texts = list(map(lambda x: x[0], batch_data))
-                text_lens = batch_lens(texts)
+                    texts = list(map(lambda x: x[0], batch_data))
+                    text_lens = batch_lens(texts)
 
-                score, span_ys = luban7(batch_data)
-                score_probs = F.softmax(score, dim=1)
+                    score, span_ys = luban7(batch_data)
+                    score_probs = F.softmax(score, dim=1)
 
-                pred = cast_list(torch.argmax(score, 1))
+                    pred = cast_list(torch.argmax(score, 1))
 
-                offset = 0
-                to_log = []
-                for bid in range(len(text_lens)):
-                    to_log.append("[{:>4}] {}".format(
-                        progress.complete_num + bid,
-                        idx2str(batch_data[bid].chars)))
-                    enum_spans = enum_span_by_length(text_lens[bid])
-                    # fragment_score = score[offset: offset + len(enum_spans)]
-                    # log(fragment_score)
-                    for sid, span in enumerate(enum_spans):
-                        begin_idx, end_idx = span
-                        span_offset = sid + offset
-                        if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                            to_log.append("{:>3}~{:<3}\t{:1}\t{:.4f}/{:.4f}\t{:>5}/{:<5}\t{}".format(
-                                begin_idx, end_idx,
-                                pred[span_offset],
-                                score_probs[span_offset][pred[span_offset]],
-                                score_probs[span_offset][span_ys[span_offset]],
-                                idx2label[pred[span_offset]],
-                                idx2label[span_ys[span_offset]],
-                                idx2str(batch_data[bid].chars[begin_idx: end_idx + 1]),
-                            ))
-                    offset += len(enum_spans)
-                log("\n".join(to_log))
-                progress.update(len(batch_data))
+                    offset = 0
+                    to_log = []
+                    for bid in range(len(text_lens)):
+                        to_log.append("[{:>4}] {}".format(
+                            progress.complete_num + bid,
+                            idx2str(batch_data[bid].chars)))
+                        enum_spans = enum_span_by_length(text_lens[bid])
+                        # fragment_score = score[offset: offset + len(enum_spans)]
+                        # log(fragment_score)
+                        for sid, span in enumerate(enum_spans):
+                            begin_idx, end_idx = span
+                            span_offset = sid + offset
+                            if pred[span_offset] != 0 or span_ys[span_offset] != 0:
+                                to_log.append("{:>3}~{:<3}\t{:1}\t{:.4f}/{:.4f}\t{:>5}/{:<5}\t{}".format(
+                                    begin_idx, end_idx,
+                                    pred[span_offset],
+                                    score_probs[span_offset][pred[span_offset]],
+                                    score_probs[span_offset][span_ys[span_offset]],
+                                    idx2label[pred[span_offset]],
+                                    idx2label[span_ys[span_offset]],
+                                    idx2str(batch_data[bid].chars[begin_idx: end_idx + 1]),
+                                ))
+                        offset += len(enum_spans)
+                    log("\n".join(to_log))
+                    progress.update(len(batch_data))
 
-            log("<<< epoch {} validation on {}".format(epoch_id, set_name))
+                log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
 
 if __name__ == '__main__':

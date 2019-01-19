@@ -6,11 +6,11 @@ from seq_encoder import BaseSeqEncoder
 class FragmentEnumerator(torch.nn.Module):
     def __init__(self,
                  max_span_len,
-                 b2e_encoder,
-                 e2b_encoder):
+                 encoder_cls,
+                 encoder_args):
         super(FragmentEnumerator, self).__init__()
-        self.b2e_encoder = b2e_encoder  # type: BaseSeqEncoder
-        self.e2b_encoder = e2b_encoder  # type: BaseSeqEncoder
+        self.b2e_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
+        self.e2b_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
         self.max_span_len = max_span_len
 
     def enumerate_inputs(self, inputs, lengths):

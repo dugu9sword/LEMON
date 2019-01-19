@@ -70,7 +70,8 @@ class MixEmbedding(torch.nn.Module):
 
 
 class BiRNNTokenEncoder(torch.nn.Module):
-    def __init__(self, cell_type, input_size, hidden_size, num_layers, dropout):
+    def __init__(self, cell_type, input_size, hidden_size, num_layers,
+                 dropout):
         super(BiRNNTokenEncoder, self).__init__()
         RNN: torch.nn.Module
         if cell_type == 'lstm':

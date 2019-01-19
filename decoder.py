@@ -201,9 +201,15 @@ if __name__ == '__main__':
     #             pass
     # print(results)
 
-    for i in range(0, 35):
-        print(decode_log(file_path="/home/zhouyi/Desktop/pos.json.logs/task-7.txt",
+    for i in range(0, 40):
+        print(decode_log(file_path="/home/zhouyi/Desktop/batchdecay.json.logs/task-1.txt",
                          threshold=-8,
                          verbose=False,
                          epoch_id=i,
                          valid_set="dev_set")[2])
+
+    # print(decode_log(file_path="logs/main.txt",
+    #                  threshold=-8,
+    #                  verbose=False,
+    #                  epoch_id=0,
+    #                  valid_set="dev_set")[2])
