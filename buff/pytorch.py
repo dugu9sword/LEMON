@@ -163,7 +163,7 @@ def focal_loss(inputs,
                gamma=2, alpha=None, reduction="mean"):
     batch_size = inputs.size(0)
     num_classes = inputs.size(1)
-    prob = F.softmax(inputs, dim=1).clamp(1e-5, 1.)
+    prob = F.softmax(inputs, dim=1).clamp(1e-10, 1.)
     # prob = inputs.exp()
 
     class_mask = inputs.data.new(batch_size, num_classes).fill_(0)

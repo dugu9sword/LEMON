@@ -15,7 +15,10 @@ class MixEmbedding(torch.nn.Module):
             self.bichar_embeds = torch.nn.Embedding(bichar_vocab_size, bichar_emb_size)
         else:
             self.bichar_embeds = None
-        self.seg_embeds = torch.nn.Embedding(seg_vocab_size, seg_emb_size)
+        if seg_emb_size > 0:
+            self.seg_embeds = torch.nn.Embedding(seg_vocab_size, seg_emb_size)
+        else:
+            self.seg_embeds = None
         if pos_emb_size > 0:
             self.pos_embeds = torch.nn.Embedding(pos_vocab_size, pos_emb_size)
         else:
@@ -26,14 +29,16 @@ class MixEmbedding(torch.nn.Module):
         ret = self.char_embeds.embedding_dim
         if self.bichar_embeds:
             ret += self.bichar_embeds.embedding_dim
-        ret += self.seg_embeds.embedding_dim
+        if self.seg_embeds:
+            ret += self.seg_embeds.embedding_dim
         if self.pos_embeds:
             ret += self.pos_embeds.embedding_dim
         return ret
 
     def forward(self, pad_chars, pad_bichars, pad_segs, pad_poss):
-        embeds_to_cat = [self.char_embeds(pad_chars),
-                         self.seg_embeds(pad_segs)]
+        embeds_to_cat = [self.char_embeds(pad_chars)]
+        if self.seg_embeds:
+            embeds_to_cat.append(self.seg_embeds(pad_segs))
         if self.pos_embeds:
             embeds_to_cat.append(self.pos_embeds(pad_poss))
         if self.bichar_embeds:
@@ -52,10 +57,11 @@ class MixEmbedding(torch.nn.Module):
                 torch.mean(self.bichar_embeds.weight),
                 torch.std(self.bichar_embeds.weight),
             ))
-        log("\t[seg] mean {} std {}".format(
-            torch.mean(self.seg_embeds.weight),
-            torch.std(self.seg_embeds.weight),
-        ))
+        if self.seg_embeds:
+            log("\t[seg] mean {} std {}".format(
+                torch.mean(self.seg_embeds.weight),
+                torch.std(self.seg_embeds.weight),
+            ))
         if self.pos_embeds:
             log("\t[pos] mean {} std {}".format(
                 torch.mean(self.pos_embeds.weight),

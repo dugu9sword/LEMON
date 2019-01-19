@@ -64,9 +64,10 @@ class ProgramArgs(argparse.Namespace):
 
         # loss
         self.focal_gamma = 0
-        self.focal_reduction = "mean"
+        self.focal_reduction = "zheng"
 
         # development config
+        self.batch_size = 30
         self.load_from_cache = False
         self.train_on = True
         self.use_data_set = "full"
@@ -112,11 +113,8 @@ class NonLinearLayer(torch.nn.Module):
 
 class Luban7(torch.nn.Module):
     def __init__(self,
-                 char2idx,
-                 bichar2idx,
-                 seg2idx,
+                 char2idx, bichar2idx, seg2idx, pos2idx,
                  label2idx,
-                 pos2idx,
                  longest_text_len,
                  ):
         super(Luban7, self).__init__()
@@ -374,12 +372,14 @@ def main():
             log(train_set.size)
             while not train_set.finished:
                 iter_id += 1
-                batch_data = train_set.next_batch(30)
+                batch_data = train_set.next_batch(config.batch_size)
                 batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)
 
                 score, span_ys = luban7(batch_data)
 
-                loss = focal_loss(score, torch.tensor(span_ys).to(device), gamma=config.focal_gamma)
+                loss = focal_loss(inputs=score,
+                                  targets=torch.tensor(span_ys).to(device),
+                                  gamma=config.focal_gamma)
                 score_probs = F.softmax(score, dim=1)
 
                 # loss_ce = F.cross_entropy(score, torch.tensor(span_ys).to(device))
