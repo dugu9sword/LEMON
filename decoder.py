@@ -202,7 +202,7 @@ if __name__ == '__main__':
     # print(results)
 
     for i in range(0, 40):
-        print(decode_log(file_path="/home/zhouyi/Desktop/batchdecay.json.logs/task-1.txt",
+        print(decode_log(file_path="/home/zhouyi/Desktop/ctx.json.logs/task-7.txt",
                          threshold=-8,
                          verbose=False,
                          epoch_id=i,

@@ -12,96 +12,17 @@ import math
 from collections import defaultdict
 from frag_enumerator import FragmentEnumerator
 from context_enumerator import ContextEnumerator
-from seq_encoder import BaseSeqEncoder, RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
-import socket
+from seq_encoder import RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
 from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
+from program_args import ProgramArgs
+from attention import MultiHeadAttention, gen_att_mask
 
+config = ProgramArgs.parse(True)
 
-class ProgramArgs(argparse.Namespace):
-    def __init__(self):
-        super(ProgramArgs, self).__init__()
-        self.max_span_length = 10
-        self.max_sentence_length = 120
-        self.char_count_gt = 2
-        self.bichar_count_gt = 2
-
-        self.token_type = "rnn"
-
-        # embedding settings
-        self.char_emb_size = 50
-        self.bichar_emb_size = 0
-        self.seg_emb_size = 25
-        self.pos_emb_size = 25
-        self.pos_bmes = 'off'
-        # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
-        # self.char_emb_pretrain = "word2vec/sgns/sgns.merge.char"
-        # self.char_emb_pretrain = "word2vec/fasttext/wiki.zh.vec"
-        self.char_emb_pretrain = "off"
-
-        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
-        self.bichar_emb_pretrain = 'off'
-
-        # transformer config
-        self.tfer_num_layer = 2
-        self.tfer_num_head = 1
-        self.tfer_head_dim = 128
-
-        # rnn config
-        self.rnn_num_layer = 2
-        self.rnn_hidden = 256
-
-        # fragment encoder
-        self.frag_type = "rnn"
-        self.frag_fofe_alpha = 0.5
-
-        # context encoder
-        # self.ctx = 'off'
-        self.ctx = 'off'
-
-        # loss
-        self.focal_gamma = 0
-        self.focal_reduction = "mean"
-
-        # regularization
-        self.drop_embed = 0.1
-        self.drop_token = 0.1
-        # self.drop_frag = 0.1
-        self.drop_nonlinear = 0.1
-        self.weight_decay = 1e-5
-
-        # development config
-        self.batch_size = 32
-        self.load_from_cache = False
-        self.train_on = True
-        self.use_data_set = "full"
-        self.epoch_max = 30
-        self.epoch_show_train = 60
-        self.model_name = "off"
-        self.model_ckpt = -1
-
-
-parser = argparse.ArgumentParser()
-nsp = ProgramArgs()
-for key, value in nsp.__dict__.items():
-    parser.add_argument('--{}'.format(key),
-                        action='store',
-                        default=value,
-                        type=type(value),
-                        dest=str(key))
-config = parser.parse_args(namespace=nsp)  # type: ProgramArgs
-
-# if socket.gethostname() == "matrimax":
-#     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# elif socket.gethostname() == "localhost.localdomain":
-#     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-
-if torch.cuda.is_available():
-    device = torch.device("cuda:0")
-else:
-    device = torch.device("cpu")
+device = allocate_cuda_device(0)
 
 
 class NonLinearLayer(torch.nn.Module):
@@ -120,6 +41,11 @@ class NonLinearLayer(torch.nn.Module):
 
 
 class Luban7(torch.nn.Module):
+
+    ###################################################################
+    # Model init
+    ###################################################################
+
     def __init__(self,
                  char2idx, bichar2idx, seg2idx, pos2idx,
                  label2idx,
@@ -169,7 +95,7 @@ class Luban7(torch.nn.Module):
                 n_layers=config.tfer_num_layer,
                 n_head=config.tfer_num_head,
                 d_head=config.tfer_head_dim,
-                dropout=config.drop_token
+                dropout=config.drop_token_encoder
             )
             token_dim = self.embeds.embedding_dim
         elif config.token_type == "rnn":
@@ -178,7 +104,7 @@ class Luban7(torch.nn.Module):
                 num_layers=config.rnn_num_layer,
                 input_size=self.embeds.embedding_dim,
                 hidden_size=config.rnn_hidden,
-                dropout=config.drop_token
+                dropout=config.drop_token_encoder
             )
             token_dim = config.rnn_hidden
         elif config.token_type == 'plain':
@@ -217,10 +143,24 @@ class Luban7(torch.nn.Module):
             raise Exception
 
         frag_dim = 2 * token_dim
+
+        if config.frag_att != "off":
+            self.multi_att = MultiHeadAttention(
+                d_q=frag_dim, d_k=token_dim, d_v=token_dim, d_out=frag_dim,
+                d_att_k=token_dim // config.frag_att_head,
+                d_att_v=token_dim // config.frag_att_head,
+                n_head=config.frag_att_head,
+                dropout=config.drop_default
+            )
+
+            frag_dim += {
+                "cat": frag_dim, "add": 0
+            }[config.frag_att]
         if config.ctx in ['include', 'exclude']:
             frag_dim += token_dim + token_dim
 
-        self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim, dropout=config.drop_nonlinear)
+        self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim,
+                                         dropout=config.drop_nonlinear)
 
         self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
@@ -249,6 +189,10 @@ class Luban7(torch.nn.Module):
                         # log(begin_token_idx, ", ", end_token_idx, " of ", text_lens[bid])
         return span_ys
 
+    ###################################################################
+    # Model forward
+    ###################################################################
+
     def forward(self, batch_data):
         chars = list(map(lambda x: x[0], batch_data))
         bichars = list(map(lambda x: x[1], batch_data))
@@ -273,17 +217,43 @@ class Luban7(torch.nn.Module):
                                  pad_poss_tensor)
 
         if config.token_type == 'rnn':
-            token_repr = self.token_encoder(input_embs, text_lens)
+            token_reprs = self.token_encoder(input_embs, text_lens)
         elif config.token_type == 'tfer':
             masks = self.token_encoder.gen_masks(pad_chars_tensor)
-            token_repr = self.token_encoder(input_embs, masks, text_lens)
+            token_reprs = self.token_encoder(input_embs, masks, text_lens)
         else:
-            token_repr = input_embs
+            token_reprs = input_embs
 
-        frag_reprs = self.fragment_encoder(token_repr, text_lens)
+        frag_reprs = self.fragment_encoder(token_reprs, text_lens)
+        if config.frag_att != "off":
+            # print(Color.red("ATTENTION!"))
+            att_frag_reprs = []
+            offset = 0
+            for i, text_len in enumerate(text_lens):
+                q = frag_reprs[offset: offset + span_num(text_len)].unsqueeze(0)
+                k = token_reprs[i][:text_len].unsqueeze(0)
+                v = k
+                # print(text_len)
+                # print('k', k.size())
+                # print('q', q.size())
+                mask = gen_att_mask(k_lens=(text_len,),
+                                    max_k_len=text_len, max_q_len=q.size(1)).to(device)
+                # print('mask', mask.size())
+                att_frag_repr, att_score = self.multi_att(q, k, v, mask)
+                att_frag_reprs.append(att_frag_repr.squeeze(0))
+                offset += text_len
+            att_frag_reprs = torch.cat(att_frag_reprs)
+            # print(frag_reprs.mean().item(), frag_reprs.std().item())
+            # print(att_frag_reprs.mean().item(), att_frag_reprs.std().item())
+            if config.frag_att == 'cat':
+                frag_reprs = torch.cat([frag_reprs, att_frag_reprs], dim=1)
+            elif config.frag_att == 'add':
+                frag_reprs = frag_reprs + att_frag_reprs
+            else:
+                raise Exception
 
         if config.ctx in ['include', 'exclude']:
-            left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_repr, text_lens)
+            left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_reprs, text_lens)
             frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
         elif config.ctx == 'off':
             pass
@@ -300,9 +270,9 @@ class Luban7(torch.nn.Module):
 @lru_cache(maxsize=None)
 def span_num(sentence_length):
     if sentence_length > config.max_span_length:
-        return (sentence_length + sentence_length - config.max_span_length + 1) * config.max_span_length / 2
+        return int((sentence_length + sentence_length - config.max_span_length + 1) * config.max_span_length / 2)
     else:
-        return (sentence_length + 1) * sentence_length / 2
+        return int((sentence_length + 1) * sentence_length / 2)
 
 
 @lru_cache(maxsize=None)
@@ -316,10 +286,12 @@ def enum_span_by_length(text_len):
     return span_lst
 
 
+###################################################################
+# Main
+###################################################################
+
 def main():
     log_config("main.txt", "cf")
-    for key, value in nsp.__dict__.items():
-        log("\t--{}={}".format(key, value))
     used_data_set = usable_data_sets[config.use_data_set]
     vocab_folder = "dataset/ontonotes4/vocab.{}.{}.{}".format(
         config.char_count_gt, config.bichar_count_gt, config.pos_bmes)

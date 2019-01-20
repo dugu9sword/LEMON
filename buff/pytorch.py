@@ -16,6 +16,14 @@ def cast_list(array):
         return array.squeeze().tolist()
 
 
+def allocate_cuda_device(cuda_idx) -> torch.device:
+    if torch.cuda.is_available() and cuda_idx >= 0:
+        device = torch.device("cuda:{}".format(cuda_idx))
+    else:
+        device = torch.device("cpu")
+    return device
+
+
 def set_gpu_device(device_id):
     torch.cuda.set_device(device_id)
 
@@ -192,3 +200,4 @@ def focal_loss(inputs,
     else:
         raise Exception()
     return loss
+

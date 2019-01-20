@@ -4,29 +4,51 @@ import torch.nn.functional as F
 import torch
 
 
+def gen_mask_by_len(lens, max_len=-1, pad_zero=True, last_dim=0):
+    if max_len == -1:
+        max_len = max(lens)
+    if pad_zero:
+        mask = torch.tril(torch.ones(max_len, max_len))
+    else:
+        mask = torch.triu(torch.ones(max_len, max_len), diagonal=1)
+    mask = mask.index_select(0, torch.tensor(lens) - 1).byte()
+    if last_dim > 0:
+        mask = mask.unsqueeze(2).repeat(1, 1, last_dim)
+    return mask
+
+
+def gen_att_mask(k_lens, max_k_len, max_q_len):
+    mask = gen_mask_by_len(k_lens, max_len=max_k_len, pad_zero=False, last_dim=0)
+    mask = mask.unsqueeze(1).expand(-1, max_q_len, -1)
+    return mask
+
+
 class MultiHeadAttention(nn.Module):
     """ Multi-Head Attention module """
 
-    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
+    def __init__(self,
+                 d_q, d_k, d_v, d_out,
+                 n_head, d_att_k, d_att_v,
+                 dropout=0.1):
         super().__init__()
-
         self.n_head = n_head
-        self.d_k = d_k
-        self.d_v = d_v
+        self.d_att_k = d_att_k
+        self.d_att_v = d_att_v
 
-        self.w_qs = nn.Linear(d_model, n_head * d_k)
-        self.w_ks = nn.Linear(d_model, n_head * d_k)
-        self.w_vs = nn.Linear(d_model, n_head * d_v)
-        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_v)))
+        self.w_qs = nn.Linear(d_q, n_head * d_att_k)
+        self.w_ks = nn.Linear(d_k, n_head * d_att_k)
+        self.w_vs = nn.Linear(d_v, n_head * d_att_v)
 
-        self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
-        self.layer_norm = nn.LayerNorm(d_model)
+        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_q + d_att_k)))
+        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_k + d_att_k)))
+        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_v + d_att_v)))
 
-        self.fc = nn.Linear(n_head * d_v, d_model)
+        self.attention = ScaledDotProductAttention(temperature=np.power(d_att_k, 0.5))
+
+        self.fc = nn.Linear(n_head * d_att_v, d_out)
         nn.init.xavier_normal_(self.fc.weight)
 
+        # self.layer_norm = nn.LayerNorm(d_out)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v, mask=None):
@@ -36,37 +58,36 @@ class MultiHeadAttention(nn.Module):
             dim:   q = k = v = d_model
             About dim:
                 dim of q & k =
-                    d_model -> n_head * d_k
+                    d_q/d_k -> n_head * d_att_k
                 dim of v =
-                    d_model -> n_head * d_v
+                    d_v -> n_head * d_att_v
                 dim of attentional results =
-                    n_head * d_v -> d_model
+                    n_head * d_att_v -> d_out
             mask:  see ScaledDotProductAttention
         """
-        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
+        d_att_k, d_att_v, n_head = self.d_att_k, self.d_att_v, self.n_head
 
         sz_b, len_q, _ = q.size()
         sz_b, len_k, _ = k.size()
         sz_b, len_v, _ = v.size()
 
-        residual = q
+        q = self.w_qs(q).view(sz_b, len_q, n_head, d_att_k)
+        k = self.w_ks(k).view(sz_b, len_k, n_head, d_att_k)
+        v = self.w_vs(v).view(sz_b, len_v, n_head, d_att_v)
 
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
-
-        q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_k)  # (n*b) x lq x dk
-        k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k)  # (n*b) x lk x dk
-        v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v)  # (n*b) x lv x dv
+        q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_att_k)  # (n*b) x lq x dk
+        k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_att_k)  # (n*b) x lk x dk
+        v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_att_v)  # (n*b) x lv x dv
 
         mask = mask.repeat(n_head, 1, 1)  # (n*b) x .. x ..
         output, attn = self.attention(q, k, v, mask=mask)
 
-        output = output.view(n_head, sz_b, len_q, d_v)
+        output = output.view(n_head, sz_b, len_q, d_att_v)
         output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1)  # b x lq x (n*dv)
 
         output = self.dropout(self.fc(output))
-        output = self.layer_norm(output + residual)
+
+        # output = self.layer_norm(output)
 
         return output, attn
 
@@ -110,12 +131,23 @@ class ScaledDotProductAttention(nn.Module):
                     len_q times on the second dimension.)
         """
         attn = torch.bmm(q, k.transpose(1, 2))
+        # if attn.size(2) < 2:
+        #     from buff import Color
+        #     print(Color.red('FUCK'))
         attn = attn / self.temperature
 
+        # print('att', attn.size())
         if mask is not None:
             attn = attn.masked_fill(mask, -np.inf)
 
         attn = self.softmax(attn)
+        # print(attn.size())
+        # if attn.size(2) < 2:
+        #     from buff import Color
+        #     print(Color.red('FUCK'))
+        #     print(attn[0][0])
+        #     if torch.isnan(attn.sum()):
+        #         exit()
         attn = self.dropout(attn)
         output = torch.bmm(attn, v)
 

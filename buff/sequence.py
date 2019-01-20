@@ -149,6 +149,7 @@ def random_shuffle_slice(lst: List, width: int) -> List:
     stop = min(start + width, len(lst))
     return __shuffle_slice(lst, start, stop)
 
+
 def batch_random_shuffle_slice(idx: List[List], width: int) -> List[List]:
     return list(map(lambda x: random_shuffle_slice(x, width), idx))
 

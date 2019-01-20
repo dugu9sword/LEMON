@@ -12,7 +12,7 @@ def get_non_pad_mask(seq):
 
 
 def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
-    ''' Sinusoid position encoding table '''
+    """ Sinusoid position encoding table """
 
     def cal_angle(position, hid_idx):
         return position / np.power(10000, 2 * (hid_idx // 2) / d_hid)
@@ -33,7 +33,7 @@ def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
 
 
 def get_attn_key_pad_mask(seq_k, seq_q):
-    ''' For masking out the padding part of key sequence. '''
+    """ For masking out the padding part of key sequence. """
 
     # Expand to fit the shape of key query attention matrix.
     len_q = seq_q.size(1)
@@ -44,7 +44,7 @@ def get_attn_key_pad_mask(seq_k, seq_q):
 
 
 def get_subsequent_mask(seq):
-    ''' For masking out the subsequent info. '''
+    """ For masking out the subsequent info. """
 
     batch_size, seq_len = seq.size()
     subsequent_mask = torch.triu(
