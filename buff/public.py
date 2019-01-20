@@ -56,8 +56,8 @@ def exist_var(name, path=None):
     return os.path.exists("{}/{}.pkl".format(path, name))
 
 
-def auto_create(name, func, override=False, path=__saved_path__):
-    if not override and exist_var(name, path):
+def auto_create(name, func, cache=False, path=__saved_path__):
+    if cache and exist_var(name, path):
         obj = load_var(name, path)
     else:
         obj = func()

@@ -308,18 +308,20 @@ def main():
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
-    train_set = ConllDataSet(data_path=used_data_set[0],
-                             char2idx=char2idx, bichar2idx=bichar2idx,
-                             seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
-                             ignore_pos_bmes=config.pos_bmes == 'off',
-                             max_text_len=config.max_sentence_length,
-                             max_span_len=config.max_span_length,
-                             sort_by_length=True)
-    dev_set = ConllDataSet(data_path=used_data_set[1],
-                           char2idx=char2idx, bichar2idx=bichar2idx,
-                           seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
-                           ignore_pos_bmes=config.pos_bmes == 'off',
-                           sort_by_length=False)
+    train_set = auto_create("train_set", lambda: ConllDataSet(
+        data_path=used_data_set[0],
+        char2idx=char2idx, bichar2idx=bichar2idx,
+        seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+        ignore_pos_bmes=config.pos_bmes == 'off',
+        max_text_len=config.max_sentence_length,
+        max_span_len=config.max_span_length,
+        sort_by_length=True), cache=config.load_from_cache)
+    dev_set = auto_create("dev_set", lambda: ConllDataSet(
+        data_path=used_data_set[1],
+        char2idx=char2idx, bichar2idx=bichar2idx,
+        seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+        ignore_pos_bmes=config.pos_bmes == 'off',
+        sort_by_length=False), cache=config.load_from_cache)
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
     longest_text_len = max(train_set.longest_text_len, dev_set.longest_text_len)
 
