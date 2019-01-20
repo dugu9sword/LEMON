@@ -153,6 +153,11 @@ def load_word2vec(embedding: torch.nn.Embedding,
     embedding.weight.data.copy_(torch.from_numpy(pre_embedding))
 
 
+def show_mean_std(tensor):
+    print("Mean {:.4f} Std {:.4f}".format(tensor.mean().item(),
+                                          tensor.std().item()))
+
+
 def flip_by_length(inputs, lengths):
     rev_inputs = []
     for it_id, it_input in enumerate(inputs):

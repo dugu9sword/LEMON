@@ -184,13 +184,14 @@ if __name__ == '__main__':
     #         pass
 
     # np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-    # file_num = 4
-    # results = np.zeros((file_num, 60), dtype=float)
+    # file_num = 16
+    # results = np.zeros((file_num, 40), dtype=float)
     # for file_id in range(0, file_num):
-    #     for epoch_id in range(0, 60):
+    #     print(file_id)
+    #     for epoch_id in range(0, 40):
     #         try:
     #             f1 = decode_log(
-    #                 file_path="/home/zhouyi/Desktop/ctx.json.logs/task-{}.txt".format(file_id),
+    #                 file_path="/home/zhouyi/Desktop/attention.json.logs/task-{}.txt".format(file_id),
     #                 threshold=0,
     #                 verbose=False,
     #                 epoch_id=epoch_id,
@@ -199,17 +200,21 @@ if __name__ == '__main__':
     #             results[file_id, epoch_id] = f1
     #         except:
     #             pass
-    # print(results)
+    # results = results.T
+    # for i in range(40):
+    #     for j in range(file_num):
+    #         print("{:0.4f}".format(results[i, j]), sep=", ")
+    #     print()
 
-    for i in range(0, 40):
-        print(decode_log(file_path="/home/zhouyi/Desktop/ctx.json.logs/task-7.txt",
-                         threshold=-8,
-                         verbose=False,
-                         epoch_id=i,
-                         valid_set="dev_set")[2])
+    # for i in range(0, 40):
+    #     print(decode_log(file_path="/home/zhouyi/Desktop/attention.json.logs/task-0.txt",
+    #                      threshold=-8,
+    #                      verbose=False,
+    #                      epoch_id=i,
+    #                      valid_set="dev_set")[2])
 
-    # print(decode_log(file_path="logs/main.txt",
-    #                  threshold=-8,
-    #                  verbose=False,
-    #                  epoch_id=0,
-    #                  valid_set="dev_set")[2])
+    print(decode_log(file_path="logs/main.txt",
+                     threshold=-8,
+                     verbose=False,
+                     epoch_id=0,
+                     valid_set="dev_set")[2])

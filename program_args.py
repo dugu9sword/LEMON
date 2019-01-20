@@ -36,15 +36,18 @@ class ProgramArgs(argparse.Namespace):
 
         # fragment encoder
         self.frag_type = "rnn"
+        self.frag_fusion = 'add'
         self.frag_fofe_alpha = 0.5
 
         # fragment attention
-        self.frag_att = 'cat'
-        self.frag_att_head = 4
+        self.frag_att = 'off'
+        self.frag_att_head = 1
 
         # context encoder
         # self.ctx = 'off'
         self.ctx = 'off'
+
+        self.num_nonlinear = 2
 
         # loss
         self.focal_gamma = 0

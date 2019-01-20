@@ -117,7 +117,7 @@ class Luban7(torch.nn.Module):
                 max_span_len=config.max_span_length,
                 encoder_cls=RNNSeqEncoder,
                 encoder_args=('lstm', token_dim, token_dim),
-
+                fusion=config.frag_fusion
             )
             if config.ctx in ['include', 'exclude']:
                 self.context_encoder = ContextEnumerator(
@@ -131,36 +131,47 @@ class Luban7(torch.nn.Module):
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
                 encoder_cls=FofeSeqEncoder,
-                encoder_args=(config.frag_fofe_alpha,)
+                encoder_args=(config.frag_fofe_alpha,),
+                fusion=config.frag_fusion
             )
         elif config.frag_type == "average":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
                 encoder_cls=AverageSeqEncoder,
                 encoder_args=(),
+                fusion=config.frag_fusion
             )
         else:
             raise Exception
 
-        frag_dim = 2 * token_dim
+        if config.frag_fusion == 'cat':
+            frag_dim = 2 * token_dim
+        elif config.frag_fusion == 'add':
+            frag_dim = token_dim
+        else:
+            raise Exception
 
         if config.frag_att != "off":
             self.multi_att = MultiHeadAttention(
                 d_q=frag_dim, d_k=token_dim, d_v=token_dim, d_out=frag_dim,
-                d_att_k=token_dim // config.frag_att_head,
-                d_att_v=token_dim // config.frag_att_head,
+                d_att_k=frag_dim // config.frag_att_head,
+                d_att_v=frag_dim // config.frag_att_head,
                 n_head=config.frag_att_head,
                 dropout=config.drop_default
             )
 
+            self.att_norm = torch.nn.LayerNorm(frag_dim)
             frag_dim += {
                 "cat": frag_dim, "add": 0
             }[config.frag_att]
+
         if config.ctx in ['include', 'exclude']:
             frag_dim += token_dim + token_dim
 
-        self.non_linear = NonLinearLayer(frag_dim, 2 * frag_dim,
-                                         dropout=config.drop_nonlinear)
+        self.non_linear_stack = torch.nn.ModuleList([
+            NonLinearLayer(frag_dim, 2 * frag_dim, dropout=config.drop_nonlinear)
+            for _ in range(config.num_nonlinear)
+        ])
 
         self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
@@ -227,28 +238,27 @@ class Luban7(torch.nn.Module):
         frag_reprs = self.fragment_encoder(token_reprs, text_lens)
         if config.frag_att != "off":
             # print(Color.red("ATTENTION!"))
+            d_frag = frag_reprs.size(1)
             att_frag_reprs = []
             offset = 0
             for i, text_len in enumerate(text_lens):
                 q = frag_reprs[offset: offset + span_num(text_len)].unsqueeze(0)
                 k = token_reprs[i][:text_len].unsqueeze(0)
                 v = k
-                # print(text_len)
-                # print('k', k.size())
-                # print('q', q.size())
                 mask = gen_att_mask(k_lens=(text_len,),
                                     max_k_len=text_len, max_q_len=q.size(1)).to(device)
-                # print('mask', mask.size())
                 att_frag_repr, att_score = self.multi_att(q, k, v, mask)
                 att_frag_reprs.append(att_frag_repr.squeeze(0))
                 offset += text_len
             att_frag_reprs = torch.cat(att_frag_reprs)
-            # print(frag_reprs.mean().item(), frag_reprs.std().item())
-            # print(att_frag_reprs.mean().item(), att_frag_reprs.std().item())
+
+            att_frag_reprs = self.att_norm(att_frag_reprs) / math.sqrt(d_frag)
+            show_mean_std(frag_reprs)
+            show_mean_std(att_frag_reprs)
             if config.frag_att == 'cat':
                 frag_reprs = torch.cat([frag_reprs, att_frag_reprs], dim=1)
             elif config.frag_att == 'add':
-                frag_reprs = frag_reprs + att_frag_reprs
+                frag_reprs = (frag_reprs + att_frag_reprs) / math.sqrt(2)
             else:
                 raise Exception
 
@@ -260,7 +270,8 @@ class Luban7(torch.nn.Module):
         else:
             raise Exception
 
-        frag_reprs = self.non_linear(frag_reprs)
+        for non_linear in self.non_linear_stack:
+            frag_reprs = non_linear(frag_reprs)
 
         span_ys = self.gen_span_ys(chars, labels)
         score = frag_reprs @ self.label_weight + self.label_bias

@@ -7,11 +7,13 @@ class FragmentEnumerator(torch.nn.Module):
     def __init__(self,
                  max_span_len,
                  encoder_cls,
-                 encoder_args):
+                 encoder_args,
+                 fusion='cat'):
         super(FragmentEnumerator, self).__init__()
         self.b2e_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
         self.e2b_encoder = encoder_cls(*encoder_args)  # type: BaseSeqEncoder
         self.max_span_len = max_span_len
+        self.fusion = fusion
 
     def enumerate_inputs(self, inputs, lengths):
         """
@@ -64,5 +66,10 @@ class FragmentEnumerator(torch.nn.Module):
                            * self.max_span_len / 2
         assert row_num == b2e_fragments.size(0)
 
-        fragments = torch.cat([b2e_fragments, e2b_fragments], 1)
+        if self.fusion == 'cat':
+            fragments = torch.cat([b2e_fragments, e2b_fragments], 1)
+        elif self.fusion == 'add':
+            fragments = (b2e_fragments + e2b_fragments) / np.sqrt(2)
+        else:
+            return Exception
         return fragments
