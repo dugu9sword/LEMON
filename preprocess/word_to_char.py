@@ -1,7 +1,7 @@
 import re
 
-in_file_path = "train.word.bmes"
-out_file_path = "train.{}.bmes"
+in_file_path = "test.word.bmes"
+out_file_path = "test.{}.bmes"
 mix_out_file = open(out_file_path.format("mix"), "w")
 # seg_out_file = open(out_file_path.format("seg"), "w")
 # tag_out_file = open(out_file_path.format("tag"), "w")

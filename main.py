@@ -15,7 +15,7 @@ from context_enumerator import ContextEnumerator
 from seq_encoder import RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
-from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets
+from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets, Sp
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from program_args import ProgramArgs
 from attention import MultiHeadAttention, gen_att_mask
@@ -209,13 +209,14 @@ class Luban7(torch.nn.Module):
         bichars = list(map(lambda x: x[1], batch_data))
         segs = list(map(lambda x: x[2], batch_data))
         poss = list(map(lambda x: x[3], batch_data))
-        labels = list(map(lambda x: x[4], batch_data))
+        ners = list(map(lambda x: x[4], batch_data))
+        labels = list(map(lambda x: x[5], batch_data))
         text_lens = batch_lens(chars)
 
-        pad_chars = batch_pad(chars, self.char2idx['<PAD>'])
-        pad_bichars = batch_pad(bichars, self.bichar2idx['<PAD>'])
-        pad_segs = batch_pad(segs, self.seg2idx['<PAD>'])
-        pad_poss = batch_pad(poss, self.pos2idx['<PAD>'])
+        pad_chars = batch_pad(chars, self.char2idx[Sp.pad])
+        pad_bichars = batch_pad(bichars, self.bichar2idx[Sp.pad])
+        pad_segs = batch_pad(segs, self.seg2idx[Sp.pad])
+        pad_poss = batch_pad(poss, self.pos2idx[Sp.pad])
 
         pad_chars_tensor = torch.tensor(pad_chars).to(device)
         pad_bichars_tensor = torch.tensor(pad_bichars).to(device)
@@ -316,21 +317,28 @@ def main():
     bichar2idx, idx2bichar = load_vocab("{}/bichar.vocab".format(vocab_folder))
     seg2idx, idx2seg = load_vocab("{}/seg.vocab".format(vocab_folder))
     pos2idx, idx2pos = load_vocab("{}/pos.vocab".format(vocab_folder))
+    ner2idx, idx2ner = load_vocab("{}/ner.vocab".format(vocab_folder))
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create("train_set", lambda: ConllDataSet(
         data_path=used_data_set[0],
-        char2idx=char2idx, bichar2idx=bichar2idx,
-        seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
         ignore_pos_bmes=config.pos_bmes == 'off',
         max_text_len=config.max_sentence_length,
         max_span_len=config.max_span_length,
         sort_by_length=True), cache=config.load_from_cache)
     dev_set = auto_create("dev_set", lambda: ConllDataSet(
         data_path=used_data_set[1],
-        char2idx=char2idx, bichar2idx=bichar2idx,
-        seg2idx=seg2idx, label2idx=label2idx, pos2idx=pos2idx,
+        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+        ignore_pos_bmes=config.pos_bmes == 'off',
+        sort_by_length=False), cache=config.load_from_cache)
+    test_set = auto_create("test_set", lambda: ConllDataSet(
+        data_path=used_data_set[2],
+        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
         ignore_pos_bmes=config.pos_bmes == 'off',
         sort_by_length=False), cache=config.load_from_cache)
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
@@ -400,7 +408,7 @@ def main():
         """
         with torch.no_grad():
             luban7.eval()
-            sets_for_validation = {"dev_set": dev_set}
+            sets_for_validation = {"dev_set": dev_set, "test_set": test_set}
             if epoch_id > config.epoch_show_train:
                 sets_for_validation["train_set"] = train_set
             for set_name, set_for_validation in sets_for_validation.items():

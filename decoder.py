@@ -183,28 +183,28 @@ if __name__ == '__main__':
     #     except:
     #         pass
 
-    # np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-    # file_num = 16
-    # results = np.zeros((file_num, 40), dtype=float)
-    # for file_id in range(0, file_num):
-    #     print(file_id)
-    #     for epoch_id in range(0, 40):
-    #         try:
-    #             f1 = decode_log(
-    #                 file_path="/home/zhouyi/Desktop/attention.json.logs/task-{}.txt".format(file_id),
-    #                 threshold=0,
-    #                 verbose=False,
-    #                 epoch_id=epoch_id,
-    #                 valid_set="dev_set")[2]
-    #             print(file_id, epoch_id, f1)
-    #             results[file_id, epoch_id] = f1
-    #         except:
-    #             pass
-    # results = results.T
-    # for i in range(40):
-    #     for j in range(file_num):
-    #         print("{:0.4f}".format(results[i, j]), sep=", ")
-    #     print()
+    np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
+    file_num = 24
+    results = np.zeros((file_num, 40), dtype=float)
+    for file_id in range(0, file_num):
+        print(file_id)
+        for epoch_id in range(0, 30):
+            try:
+                f1 = decode_log(
+                    file_path="/home/zhouyi/Desktop/fusion.json.logs/task-{}.txt".format(file_id),
+                    threshold=0,
+                    verbose=False,
+                    epoch_id=epoch_id,
+                    valid_set="dev_set")[2]
+                print(file_id, epoch_id, f1)
+                results[file_id, epoch_id] = f1
+            except:
+                pass
+    results = results.T
+    for i in range(40):
+        for j in range(file_num):
+            print("{:0.4f}".format(results[i, j]), sep=", ", end="")
+        print()
 
     # for i in range(0, 40):
     #     print(decode_log(file_path="/home/zhouyi/Desktop/attention.json.logs/task-0.txt",
@@ -213,8 +213,8 @@ if __name__ == '__main__':
     #                      epoch_id=i,
     #                      valid_set="dev_set")[2])
 
-    print(decode_log(file_path="logs/main.txt",
-                     threshold=-8,
-                     verbose=False,
-                     epoch_id=0,
-                     valid_set="dev_set")[2])
+    # print(decode_log(file_path="logs/main.txt",
+    #                  threshold=-8,
+    #                  verbose=False,
+    #                  epoch_id=0,
+    #                  valid_set="dev_set")[2])

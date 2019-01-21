@@ -36,7 +36,7 @@ class ProgramArgs(argparse.Namespace):
 
         # fragment encoder
         self.frag_type = "rnn"
-        self.frag_fusion = 'add'
+        self.frag_fusion = 'cat'
         self.frag_fofe_alpha = 0.5
 
         # fragment attention

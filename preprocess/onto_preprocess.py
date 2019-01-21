@@ -33,7 +33,7 @@ Conjunction (2): CC, CS.
 Particle (8): DEC, DEG, DER, DEV, SP, AS, ETC, SP, MSP.
 Others (8): IJ, ON, PU, JJ, FW, LB, SB, BA
 """
-mapping_tags = defaultdict(lambda: "OTHER", {
+mapping_tags = defaultdict(lambda: "PUNC", {
     "VA": "ADJ", "JJ": "ADJ",
 
     "VC": "VERB", "VE": "VERB", "VV": "VERB",

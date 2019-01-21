@@ -6,10 +6,11 @@ from collections import defaultdict
 import os
 
 usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
-                             "dataset/ontonotes4/dev.mix.bmes"),
+                             "dataset/ontonotes4/dev.mix.bmes",
+                             "dataset/ontonotes4/test.mix.bmes"),
                     "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
-                             "dataset/ontonotes4/tiny.mix.bmes")
-                    }
+                             "dataset/ontonotes4/tiny.mix.bmes",
+                             "dataset/ontonotes4/tiny.mix.bmes")}
 
 
 def load_sentences(file_path, sep=r"\s+"):
@@ -37,7 +38,15 @@ Datum = NamedTuple("Datum", [("chars", List[int]),
                              ("bichars", List[int]),
                              ("segs", List[int]),
                              ("poss", List[int]),
+                             ("ners", List[int]),
                              ("labels", List[SpanLabel])])
+
+
+class Sp:
+    pad = "<pad>"
+    oov = "<oov>"
+    sos = "<sos>"
+    eos = "<eos>"
 
 
 def load_vocab(vocab_path):
@@ -62,7 +71,7 @@ def gen_vocab(data_path, out_folder,
     char_count = defaultdict(lambda: 0)
     bichar_count = defaultdict(lambda: 0)
     ner_labels = []  # BE-*
-    pos_vocab = {"<PAD>": 0, "<OOV>": 1}
+    pos_vocab = {Sp.pad: 0}
     for sentence in sentences:
         for line_idx, line in enumerate(sentence):
             char_count[line[0]] += 1
@@ -76,27 +85,32 @@ def gen_vocab(data_path, out_folder,
             if line_idx < len(sentence) - 1:
                 bichar_count[line[0] + sentence[line_idx + 1][0]] += 1
             else:
-                bichar_count[line[0] + "<EOS>"] += 1
+                bichar_count[line[0] + Sp.eos] += 1
 
     char_count = dict(sorted(char_count.items(), key=lambda x: x[1], reverse=True))
     bichar_count = dict(sorted(bichar_count.items(), key=lambda x: x[1], reverse=True))
 
     # gen char vocab
-    char_vocab = {"<PAD>": 0, "<OOV>": 1}
+    char_vocab = {Sp.pad: 0, Sp.oov: 1, Sp.sos: 2, Sp.eos: 3}
     for i, k in enumerate(char_count.keys()):
         if char_count[k] > char_count_gt:
             char_vocab[k] = len(char_vocab)
     analyze_vocab_count(char_count)
 
     # gen char vocab
-    bichar_vocab = {"<PAD>": 0, "<OOV>": 1}
+    bichar_vocab = {Sp.pad: 0, Sp.oov: 1}
     for i, k in enumerate(bichar_count.keys()):
         if bichar_count[k] > bichar_count_gt:
             bichar_vocab[k] = len(bichar_vocab)
     analyze_vocab_count(bichar_count)
 
     # seg vocab
-    seg_vocab = {"<PAD>": 0, "B": 1, "M": 2, "E": 3, "S": 4}
+    seg_vocab = {Sp.pad: 0, "B": 1, "M": 2, "E": 3, "S": 4}
+
+    # ner vocab / BMES mode
+    ner_vocab = {Sp.pad: 0, Sp.sos: 1, Sp.eos: 2}
+    for tag in ner_labels:
+        ner_vocab[tag] = len(ner_vocab)
 
     # gen label vocab
     label_vocab = {"NONE": 0}
@@ -112,6 +126,7 @@ def gen_vocab(data_path, out_folder,
                 "bichar.vocab": bichar_vocab,
                 "seg.vocab": seg_vocab,
                 "pos.vocab": pos_vocab,
+                "ner.vocab": ner_vocab,
                 "label.vocab": label_vocab,
                 }.items():
         f_out = open("{}/{}".format(out_folder, ele[0]), "w", encoding='utf8')
@@ -120,13 +135,13 @@ def gen_vocab(data_path, out_folder,
         f_out.close()
 
 
-# gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
+gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
 
 
 class ConllDataSet(DataSet):
 
     def __init__(self, data_path,
-                 char2idx, bichar2idx, seg2idx, label2idx, pos2idx,
+                 char2idx, bichar2idx, seg2idx, pos2idx, ner2idx, label2idx,
                  ignore_pos_bmes=False,
                  max_text_len=math.inf,
                  max_span_len=math.inf,
@@ -142,18 +157,18 @@ class ConllDataSet(DataSet):
         __sentence_length_count = defaultdict(lambda: 0)
 
         for sid in range(len(sentences)):
-            chars, bichars, segs, labels, poss = [], [], [], [], []
+            chars, bichars, segs, labels, poss, ners = [], [], [], [], [], []
 
             sen = sentences[sid]
             sen_len = len(sen)
 
             for cid in range(sen_len):
                 char = sen[cid][0]
-                chars.append(char2idx[char] if char in char2idx else char2idx["<OOV>"])
+                chars.append(char2idx[char] if char in char2idx else char2idx[Sp.oov])
                 __sentence_length_count[len(chars)] += 1
 
-                bichar = char + sen[cid + 1][0] if cid < sen_len - 1 else char + "<EOS>"
-                bichars.append(bichar2idx[bichar] if bichar in bichar2idx else bichar2idx["<OOV>"])
+                bichar = char + sen[cid + 1][0] if cid < sen_len - 1 else char + Sp.eos
+                bichars.append(bichar2idx[bichar] if bichar in bichar2idx else bichar2idx[Sp.oov])
 
                 segs.append(seg2idx[sen[cid][1]])
 
@@ -161,6 +176,8 @@ class ConllDataSet(DataSet):
                 if ignore_pos_bmes:
                     pos = pos[2:]
                 poss.append(pos2idx[pos])
+
+                ners.append(ner2idx[sen[cid][3]])
 
                 if re.match(r"^[BS]", sen[cid][3]):
                     state, label = sen[cid][3].split("-")
@@ -182,7 +199,8 @@ class ConllDataSet(DataSet):
                         self.__longest_span_len = max(self.__longest_span_len, label_e - label_b + 1)
 
             if len(chars) < max_text_len:
-                self.data.append(Datum(chars=chars, bichars=bichars, segs=segs, labels=labels, poss=poss))
+                self.data.append(Datum(chars=chars, bichars=bichars, segs=segs,
+                                       poss=poss, ners=ners, labels=labels))
                 self.__longest_text_len = max(self.__longest_text_len, len(chars))
 
         if sort_by_length:
