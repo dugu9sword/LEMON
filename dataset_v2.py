@@ -135,7 +135,7 @@ def gen_vocab(data_path, out_folder,
         f_out.close()
 
 
-gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
+# gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
 
 
 class ConllDataSet(DataSet):

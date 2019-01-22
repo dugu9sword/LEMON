@@ -12,6 +12,8 @@ class ProgramArgs(argparse.Namespace):
         self.token_type = "rnn"
 
         # embedding settings
+        self.use_bert = True
+        self.bert_ip = "0.0.0.0"
         self.char_emb_size = 50
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
@@ -35,17 +37,17 @@ class ProgramArgs(argparse.Namespace):
         self.rnn_hidden = 256
 
         # fragment encoder
-        self.frag_type = "rnn"
+        self.frag_type = "off"
         self.frag_fusion = 'cat'
         self.frag_fofe_alpha = 0.5
 
         # fragment attention
-        self.frag_att = 'off'
+        self.frag_att_type = 'off'
         self.frag_att_head = 1
 
         # context encoder
         # self.ctx = 'off'
-        self.ctx = 'off'
+        self.ctx_type = 'include'
 
         self.num_nonlinear = 2
 

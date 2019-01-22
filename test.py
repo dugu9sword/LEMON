@@ -10,10 +10,8 @@ from attention import *
 
 # from transformer.sub_layers import ScaledDotProductAttention, MultiHeadAttention
 
-a = 213
-abc = torch.tensor([1, 2, 4])
-import ipdb
+from dataset_v2 import load_sentences
 
-ipdb.set_trace()
 
-print('f')
+s = load_sentences("dataset/msra/msra_train_bio.txt")
+print(len(s))

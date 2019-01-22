@@ -19,10 +19,14 @@ from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab,
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from program_args import ProgramArgs
 from attention import MultiHeadAttention, gen_att_mask
+from bert_serving.client import BertClient
 
 config = ProgramArgs.parse(True)
 
 device = allocate_cuda_device(0)
+
+if config.use_bert:
+    bc = BertClient(ip=config.bert_ip)
 
 
 class NonLinearLayer(torch.nn.Module):
@@ -49,6 +53,7 @@ class Luban7(torch.nn.Module):
     def __init__(self,
                  char2idx, bichar2idx, seg2idx, pos2idx,
                  label2idx,
+                 idx2char,
                  longest_text_len,
                  ):
         super(Luban7, self).__init__()
@@ -57,7 +62,9 @@ class Luban7(torch.nn.Module):
         self.seg2idx = seg2idx
         self.label2idx = label2idx
         self.pos2idx = pos2idx
+        self.idx2char = idx2char  # for bert
 
+        """ Embedding Layer """
         self.embeds = MixEmbedding(char_vocab_size=len(char2idx),
                                    char_emb_size=config.char_emb_size,
                                    seg_vocab_size=len(seg2idx),
@@ -88,30 +95,36 @@ class Luban7(torch.nn.Module):
                               torch.std(self.embeds.char_embeds.weight).item())
         self.embeds.show_mean_std()
 
+        embed_dim = self.embeds.embedding_dim
+        if config.use_bert:
+            embed_dim += 768
+
         if config.token_type == "tfer":
             self.token_encoder = TransformerEncoderV2(
-                d_model=self.embeds.embedding_dim,
+                d_model=embed_dim,
                 len_max_seq=longest_text_len,
                 n_layers=config.tfer_num_layer,
                 n_head=config.tfer_num_head,
                 d_head=config.tfer_head_dim,
                 dropout=config.drop_token_encoder
             )
-            token_dim = self.embeds.embedding_dim
+            token_dim = embed_dim
         elif config.token_type == "rnn":
             self.token_encoder = BiRNNTokenEncoder(
                 cell_type='lstm',
                 num_layers=config.rnn_num_layer,
-                input_size=self.embeds.embedding_dim,
+                input_size=embed_dim,
                 hidden_size=config.rnn_hidden,
                 dropout=config.drop_token_encoder
             )
             token_dim = config.rnn_hidden
         elif config.token_type == 'plain':
-            token_dim = self.embeds.embedding_dim
+            token_dim = embed_dim
         else:
             raise Exception
 
+        """ Fragment & Context Layer"""
+        frag_dim = 0
         if config.frag_type == "rnn":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
@@ -119,14 +132,6 @@ class Luban7(torch.nn.Module):
                 encoder_args=('lstm', token_dim, token_dim),
                 fusion=config.frag_fusion
             )
-            if config.ctx in ['include', 'exclude']:
-                self.context_encoder = ContextEnumerator(
-                    max_span_len=config.max_span_length,
-                    encoder_cls=RNNSeqEncoder,
-                    encoder_args=('lstm', token_dim, token_dim),
-                    out_size=token_dim,
-                    include=config.ctx == 'include'
-                )
         elif config.frag_type == "fofe":
             self.fragment_encoder = FragmentEnumerator(
                 max_span_len=config.max_span_length,
@@ -141,33 +146,44 @@ class Luban7(torch.nn.Module):
                 encoder_args=(),
                 fusion=config.frag_fusion
             )
+        elif config.frag_type == "off":
+            pass
         else:
             raise Exception
 
-        if config.frag_fusion == 'cat':
-            frag_dim = 2 * token_dim
-        elif config.frag_fusion == 'add':
-            frag_dim = token_dim
-        else:
-            raise Exception
+        if config.frag_type != "off":
+            if config.frag_fusion == 'cat':
+                frag_dim += 2 * token_dim
+            elif config.frag_fusion == 'add':
+                frag_dim += token_dim
+            else:
+                raise Exception
 
-        if config.frag_att != "off":
-            self.multi_att = MultiHeadAttention(
-                d_q=frag_dim, d_k=token_dim, d_v=token_dim, d_out=frag_dim,
-                d_att_k=frag_dim // config.frag_att_head,
-                d_att_v=frag_dim // config.frag_att_head,
-                n_head=config.frag_att_head,
-                dropout=config.drop_default
+            if config.frag_att_type != "off":
+                self.multi_att = MultiHeadAttention(
+                    d_q=frag_dim, d_k=token_dim, d_v=token_dim, d_out=frag_dim,
+                    d_att_k=frag_dim // config.frag_att_head,
+                    d_att_v=frag_dim // config.frag_att_head,
+                    n_head=config.frag_att_head,
+                    dropout=config.drop_default
+                )
+
+                self.att_norm = torch.nn.LayerNorm(frag_dim)
+                frag_dim += {
+                    "cat": frag_dim, "add": 0
+                }[config.frag_att_type]
+
+        if config.ctx_type in ['include', 'exclude']:
+            self.context_encoder = ContextEnumerator(
+                max_span_len=config.max_span_length,
+                encoder_cls=RNNSeqEncoder,
+                encoder_args=('lstm', token_dim, token_dim),
+                out_size=token_dim,
+                include=config.ctx_type == 'include'
             )
-
-            self.att_norm = torch.nn.LayerNorm(frag_dim)
-            frag_dim += {
-                "cat": frag_dim, "add": 0
-            }[config.frag_att]
-
-        if config.ctx in ['include', 'exclude']:
             frag_dim += token_dim + token_dim
 
+        """ Non Linear Stack """
         self.non_linear_stack = torch.nn.ModuleList([
             NonLinearLayer(frag_dim, 2 * frag_dim, dropout=config.drop_nonlinear)
             for _ in range(config.num_nonlinear)
@@ -228,6 +244,12 @@ class Luban7(torch.nn.Module):
                                  pad_segs_tensor,
                                  pad_poss_tensor)
 
+        if config.use_bert is not None:
+            texts = list(map(lambda x: "".join(map(lambda ele: self.idx2char[ele], x)), chars))
+            bert_embs = torch.tensor(bc.encode(texts)).to(device)
+            input_embs = torch.cat([input_embs,
+                                    bert_embs[:, 1:1 + max(text_lens), :]], dim=2)
+
         if config.token_type == 'rnn':
             token_reprs = self.token_encoder(input_embs, text_lens)
         elif config.token_type == 'tfer':
@@ -236,37 +258,43 @@ class Luban7(torch.nn.Module):
         else:
             token_reprs = input_embs
 
-        frag_reprs = self.fragment_encoder(token_reprs, text_lens)
-        if config.frag_att != "off":
-            # print(Color.red("ATTENTION!"))
-            d_frag = frag_reprs.size(1)
-            att_frag_reprs = []
-            offset = 0
-            for i, text_len in enumerate(text_lens):
-                q = frag_reprs[offset: offset + span_num(text_len)].unsqueeze(0)
-                k = token_reprs[i][:text_len].unsqueeze(0)
-                v = k
-                mask = gen_att_mask(k_lens=(text_len,),
-                                    max_k_len=text_len, max_q_len=q.size(1)).to(device)
-                att_frag_repr, att_score = self.multi_att(q, k, v, mask)
-                att_frag_reprs.append(att_frag_repr.squeeze(0))
-                offset += text_len
-            att_frag_reprs = torch.cat(att_frag_reprs)
+        if config.frag_type != "off":
+            frag_reprs = self.fragment_encoder(token_reprs, text_lens)
+            if config.frag_att_type != "off":
+                # print(Color.red("ATTENTION!"))
+                d_frag = frag_reprs.size(1)
+                att_frag_reprs = []
+                offset = 0
+                for i, text_len in enumerate(text_lens):
+                    q = frag_reprs[offset: offset + span_num(text_len)].unsqueeze(0)
+                    k = token_reprs[i][:text_len].unsqueeze(0)
+                    v = k
+                    mask = gen_att_mask(k_lens=(text_len,),
+                                        max_k_len=text_len, max_q_len=q.size(1)).to(device)
+                    att_frag_repr, att_score = self.multi_att(q, k, v, mask)
+                    att_frag_reprs.append(att_frag_repr.squeeze(0))
+                    offset += text_len
+                att_frag_reprs = torch.cat(att_frag_reprs)
 
-            att_frag_reprs = self.att_norm(att_frag_reprs) / math.sqrt(d_frag)
-            show_mean_std(frag_reprs)
-            show_mean_std(att_frag_reprs)
-            if config.frag_att == 'cat':
-                frag_reprs = torch.cat([frag_reprs, att_frag_reprs], dim=1)
-            elif config.frag_att == 'add':
-                frag_reprs = (frag_reprs + att_frag_reprs) / math.sqrt(2)
-            else:
-                raise Exception
+                att_frag_reprs = self.att_norm(att_frag_reprs) / math.sqrt(d_frag)
+                show_mean_std(frag_reprs)
+                show_mean_std(att_frag_reprs)
+                if config.frag_att_type == 'cat':
+                    frag_reprs = torch.cat([frag_reprs, att_frag_reprs], dim=1)
+                elif config.frag_att_type == 'add':
+                    frag_reprs = (frag_reprs + att_frag_reprs) / math.sqrt(2)
+                else:
+                    raise Exception
+        else:
+            frag_reprs = None
 
-        if config.ctx in ['include', 'exclude']:
+        if config.ctx_type in ['include', 'exclude']:
             left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_reprs, text_lens)
-            frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
-        elif config.ctx == 'off':
+            if frag_reprs:
+                frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
+            else:
+                frag_reprs = torch.cat([left_ctx_reprs, right_ctx_reprs], dim=1)
+        elif config.ctx_type == 'off':
             pass
         else:
             raise Exception
@@ -333,12 +361,14 @@ def main():
         data_path=used_data_set[1],
         char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
         pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+        max_text_len=config.max_sentence_length,
         ignore_pos_bmes=config.pos_bmes == 'off',
         sort_by_length=False), cache=config.load_from_cache)
     test_set = auto_create("test_set", lambda: ConllDataSet(
         data_path=used_data_set[2],
         char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
         pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+        max_text_len=config.max_sentence_length,
         ignore_pos_bmes=config.pos_bmes == 'off',
         sort_by_length=False), cache=config.load_from_cache)
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
@@ -349,6 +379,7 @@ def main():
                     seg2idx=seg2idx,
                     pos2idx=pos2idx,
                     label2idx=label2idx,
+                    idx2char=idx2char,
                     longest_text_len=longest_text_len).to(device)
     opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
