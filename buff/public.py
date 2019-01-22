@@ -9,7 +9,7 @@ import random
 import argparse
 from typing import List, Dict, NamedTuple
 from colorama import Fore, Back
-import psutil
+# import psutil
 from sklearn.metrics import precision_recall_fscore_support as sklearn_prf
 
 __saved_path__ = "saved/vars"
@@ -24,11 +24,11 @@ def create_folder(folder_path):
         os.makedirs(folder_path, exist_ok=True)
 
 
-def show_mem(sth=""):
-    top = psutil.Process(os.getpid())
-    info = top.memory_full_info()
-    memory = info.uss / 1024. / 1024.
-    print(Color.green('Memory: {:.2f} MB  {}'.format(memory, sth)))
+# def show_mem(sth=""):
+#     top = psutil.Process(os.getpid())
+#     info = top.memory_full_info()
+#     memory = info.uss / 1024. / 1024.
+#     print(Color.green('Memory: {:.2f} MB  {}'.format(memory, sth)))
 
 
 def set_saved_path(path):

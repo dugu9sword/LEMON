@@ -13,5 +13,5 @@ from attention import *
 from dataset_v2 import load_sentences
 
 
-s = load_sentences("dataset/msra/msra_train_bio.txt")
-print(len(s))
+import torch
+# pdb.set_trace()

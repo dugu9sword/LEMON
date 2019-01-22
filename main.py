@@ -19,14 +19,12 @@ from dataset_v2 import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab,
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from program_args import ProgramArgs
 from attention import MultiHeadAttention, gen_att_mask
-from bert_serving.client import BertClient
+from attention import gen_mask_by_len
 
 config = ProgramArgs.parse(True)
 
 device = allocate_cuda_device(0)
 
-if config.use_bert:
-    bc = BertClient(ip=config.bert_ip)
 
 
 class NonLinearLayer(torch.nn.Module):
@@ -53,7 +51,6 @@ class Luban7(torch.nn.Module):
     def __init__(self,
                  char2idx, bichar2idx, seg2idx, pos2idx,
                  label2idx,
-                 idx2char,
                  longest_text_len,
                  ):
         super(Luban7, self).__init__()
@@ -62,7 +59,6 @@ class Luban7(torch.nn.Module):
         self.seg2idx = seg2idx
         self.label2idx = label2idx
         self.pos2idx = pos2idx
-        self.idx2char = idx2char  # for bert
 
         """ Embedding Layer """
         self.embeds = MixEmbedding(char_vocab_size=len(char2idx),
@@ -96,8 +92,7 @@ class Luban7(torch.nn.Module):
         self.embeds.show_mean_std()
 
         embed_dim = self.embeds.embedding_dim
-        if config.use_bert:
-            embed_dim += 768
+
 
         if config.token_type == "tfer":
             self.token_encoder = TransformerEncoderV2(
@@ -244,11 +239,6 @@ class Luban7(torch.nn.Module):
                                  pad_segs_tensor,
                                  pad_poss_tensor)
 
-        if config.use_bert is not None:
-            texts = list(map(lambda x: "".join(map(lambda ele: self.idx2char[ele], x)), chars))
-            bert_embs = torch.tensor(bc.encode(texts)).to(device)
-            input_embs = torch.cat([input_embs,
-                                    bert_embs[:, 1:1 + max(text_lens), :]], dim=2)
 
         if config.token_type == 'rnn':
             token_reprs = self.token_encoder(input_embs, text_lens)
@@ -379,7 +369,6 @@ def main():
                     seg2idx=seg2idx,
                     pos2idx=pos2idx,
                     label2idx=label2idx,
-                    idx2char=idx2char,
                     longest_text_len=longest_text_len).to(device)
     opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
