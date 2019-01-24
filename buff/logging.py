@@ -1,5 +1,6 @@
 import os
 from colorama import Fore, Back
+from typing import List
 
 __log_path__ = "logs"
 globals()["__default_target__"] = 'c'
@@ -33,6 +34,19 @@ def log(*info, target=None):
         logger = globals()["__logger__"]
         logger.write("{}\n".format(info_str))
         logger.flush()
+
+
+log_buffer = []  # type:List
+
+
+def log_to_buffer(*info):
+    for ele in info:
+        log_buffer.append(ele)
+
+
+def log_flush_buffer(target=None):
+    log("\n".join(log_buffer), target=target)
+    log_buffer.clear()
 
 
 class Color(object):

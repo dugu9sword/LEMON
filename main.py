@@ -10,6 +10,7 @@ from dataset import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, us
 from program_args import config
 from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
+import pdb
 
 device = allocate_cuda_device(0)
 
@@ -48,28 +49,34 @@ def main():
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
-    train_set = auto_create("train_set", lambda: ConllDataSet(
-        data_path=used_data_set[0],
-        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-        ignore_pos_bmes=config.pos_bmes == 'off',
-        max_text_len=config.max_sentence_length,
-        max_span_len=config.max_span_length,
-        sort_by_length=True), cache=config.load_from_cache)  # type: ConllDataSet
-    dev_set = auto_create("dev_set", lambda: ConllDataSet(
-        data_path=used_data_set[1],
-        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-        max_text_len=config.max_sentence_length,
-        ignore_pos_bmes=config.pos_bmes == 'off',
-        sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
-    test_set = auto_create("test_set", lambda: ConllDataSet(
-        data_path=used_data_set[2],
-        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-        max_text_len=config.max_sentence_length,
-        ignore_pos_bmes=config.pos_bmes == 'off',
-        sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
+    train_set = auto_create(
+        "train_set.{}".format(config.use_data_set),
+        lambda: ConllDataSet(
+            data_path=used_data_set[0],
+            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+            ignore_pos_bmes=config.pos_bmes == 'off',
+            max_text_len=config.max_sentence_length,
+            max_span_len=config.max_span_length,
+            sort_by_length=True), cache=config.load_from_cache)  # type: ConllDataSet
+    dev_set = auto_create(
+        "dev_set.{}".format(config.use_data_set),
+        lambda: ConllDataSet(
+            data_path=used_data_set[1],
+            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+            max_text_len=config.max_sentence_length,
+            ignore_pos_bmes=config.pos_bmes == 'off',
+            sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
+    test_set = auto_create(
+        "test_set.{}".format(config.use_data_set),
+        lambda: ConllDataSet(
+            data_path=used_data_set[2],
+            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+            max_text_len=config.max_sentence_length,
+            ignore_pos_bmes=config.pos_bmes == 'off',
+            sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
     longest_text_len = max(train_set.longest_text_len, dev_set.longest_text_len)
 
@@ -80,7 +87,12 @@ def main():
                     ner2idx=ner2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
-    opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
+    if config.opt == 'adam':
+        opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
+    elif config.opt == 'sparseadam':
+        opt = torch.optim.SparseAdam(luban7.parameters(), lr=0.001)
+    else:
+        raise Exception
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
     # opt = torch.optim.SGD(luban7.parameters(), lr=0.1, momentum=0.9)
@@ -107,29 +119,39 @@ def main():
                 batch_data = train_set.next_batch(config.batch_size)
                 batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)
 
-                if config.crf_training:
-                    loss = luban7.crf_nll(batch_data)
-                    preds = luban7.crf_decode(batch_data)
-                    accu = crf_evaluator.eval(preds, group_fields(batch_data, "ners"))[2]
-                else:
-                    score, span_ys = luban7.get_span_score_tags(batch_data)
-                    loss = focal_loss(inputs=score,
-                                      targets=torch.tensor(span_ys).to(device),
-                                      gamma=config.focal_gamma)
-                    score_probs = F.softmax(score, dim=1)
-                    accu = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+                crf_loss = luban7.crf_nll(batch_data)
+                preds = luban7.crf_decode(batch_data)
+                crf_accu = crf_evaluator.eval(preds, group_fields(batch_data, "ners"))[2]
+
+                score, span_ys = luban7.get_span_score_tags(batch_data)
+                luban_loss = focal_loss(inputs=score,
+                                        targets=torch.tensor(span_ys).to(device),
+                                        gamma=config.focal_gamma)
+                score_probs = F.softmax(score, dim=1)
+                luban_accu = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+
+                loss = config.crf * crf_loss + (1 - config.crf) * luban_loss
 
                 progress.update(len(batch_data))
                 log("".join([
                     "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
                     "b: {:.4f} / c:{:.4f} / r: {:.4f} "
                         .format(progress.batch_time, progress.cost_time, progress.rest_time),
-                    "loss: {:.4f} ".format(loss.item()),
-                    "accuracy: {:.4f}".format(accu)])
+                    "crf loss: {:.4f} ".format(crf_loss.item()),
+                    "accuracy: {:.4f}".format(crf_accu)])
+                )
+                log("".join([
+                    "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
+                    "b: {:.4f} / c:{:.4f} / r: {:.4f} "
+                        .format(progress.batch_time, progress.cost_time, progress.rest_time),
+                    "loss: {:.4f} ".format(luban_loss.item()),
+                    "accuracy: {:.4f}".format(luban_accu)])
                 )
 
                 opt.zero_grad()
                 loss.backward()
+                if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
+                    pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
 
@@ -160,48 +182,47 @@ def main():
                     texts = list(map(lambda x: x[0], batch_data))
                     text_lens = batch_lens(texts)
 
-                    if config.crf_training:
-                        results = luban7.crf_decode(batch_data)
-                        crf_evaluator.eval(results, group_fields(batch_data, "ners"))
-                    else:
-                        score, span_ys = luban7.get_span_score_tags(batch_data)
-                        score_probs = F.softmax(score, dim=1)
+                    # CRF
+                    results = luban7.crf_decode(batch_data)
+                    crf_evaluator.eval(results, group_fields(batch_data, "ners"))
 
-                        pred = cast_list(torch.argmax(score, 1))
+                    # Luban
+                    score, span_ys = luban7.get_span_score_tags(batch_data)
+                    score_probs = F.softmax(score, dim=1)
 
-                        offset = 0
-                        to_log = []
-                        for bid in range(len(text_lens)):
-                            to_log.append("[{:>4}] {}".format(
-                                progress.complete_num + bid,
-                                idx2str(batch_data[bid].chars)))
-                            enum_spans = enum_span_by_length(text_lens[bid])
-                            # fragment_score = score[offset: offset + len(enum_spans)]
-                            # log(fragment_score)
-                            luban_spans = []
-                            for sid, span in enumerate(enum_spans):
-                                begin_idx, end_idx = span
-                                span_offset = sid + offset
-                                if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                                    luban_span = LubanSpan(
-                                        bid=begin_idx, eid=end_idx, lid=pred[span_offset],
-                                        pred_prob=score_probs[span_offset][pred[span_offset]],
-                                        gold_prob=score_probs[span_offset][span_ys[span_offset]],
-                                        pred_label=idx2label[pred[span_offset]],
-                                        gold_label=idx2label[span_ys[span_offset]],
-                                        fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
-                                    )
-                                    luban_spans.append(luban_span)
-                                    to_log.append(luban_span_to_str(luban_span))
-                            luban_evaluator.decode(luban_spans)
-                            offset += len(enum_spans)
-                        log("\n".join(to_log))
+                    pred = cast_list(torch.argmax(score, 1))
+
+                    offset = 0
+                    for bid in range(len(text_lens)):
+                        log_to_buffer("[{:>4}] {}".format(
+                            progress.complete_num + bid,
+                            idx2str(batch_data[bid].chars)))
+                        enum_spans = enum_span_by_length(text_lens[bid])
+                        # fragment_score = score[offset: offset + len(enum_spans)]
+                        # log(fragment_score)
+                        luban_spans = []
+                        for sid, span in enumerate(enum_spans):
+                            begin_idx, end_idx = span
+                            span_offset = sid + offset
+                            if pred[span_offset] != 0 or span_ys[span_offset] != 0:
+                                luban_span = LubanSpan(
+                                    bid=begin_idx, eid=end_idx, lid=pred[span_offset],
+                                    pred_prob=score_probs[span_offset][pred[span_offset]],
+                                    gold_prob=score_probs[span_offset][span_ys[span_offset]],
+                                    pred_label=idx2label[pred[span_offset]],
+                                    gold_label=idx2label[span_ys[span_offset]],
+                                    fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
+                                )
+                                luban_spans.append(luban_span)
+                                log_to_buffer(luban_span_to_str(luban_span))
+                        luban_evaluator.decode(luban_spans)
+                        offset += len(enum_spans)
+                    log_flush_buffer()
 
                     progress.update(len(batch_data))
-                    if config.crf_training:
-                        log("CRF: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
-                    else:
-                        log("Luban: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
+
+                log("CRF: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
+                log("Luban: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
 
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 

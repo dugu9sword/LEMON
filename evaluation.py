@@ -163,7 +163,7 @@ class LubanEvaluator:
                 self.gold_num += 1
 
     @property
-    def prf(self, verbose=True):
+    def prf(self, verbose=False):
         if verbose:
             log("TP", self.TP)
             log("FP", self.FP)

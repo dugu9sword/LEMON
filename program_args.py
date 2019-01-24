@@ -11,7 +11,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
-        self.crf_training = False
+        self.crf = 0.1
 
         # embedding settings
         self.char_emb_size = 50
@@ -62,12 +62,14 @@ class ProgramArgs(argparse.Namespace):
         self.drop_nonlinear = 0
         self.weight_decay = 1e-5
 
+        self.opt = 'adam'
+
         # development config
         self.batch_size = 32
         self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full"
-        self.epoch_max = 30
+        self.epoch_max = 50
         self.epoch_show_train = 60
         self.model_name = "off"
         self.model_ckpt = -1

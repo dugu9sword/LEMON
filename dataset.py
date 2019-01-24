@@ -8,9 +8,9 @@ import os
 usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
                              "dataset/ontonotes4/dev.mix.bmes",
                              "dataset/ontonotes4/test.mix.bmes"),
-                    "tiny": ("dataset/ontonotes4/dev.mix.bmes",
-                             "dataset/ontonotes4/dev.mix.bmes",
-                             "dataset/ontonotes4/dev.mix.bmes")}
+                    "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
+                             "dataset/ontonotes4/tiny.mix.bmes",
+                             "dataset/ontonotes4/tiny.mix.bmes")}
 
 
 def load_sentences(file_path, sep=r"\s+"):

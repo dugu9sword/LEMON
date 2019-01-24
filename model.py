@@ -225,7 +225,7 @@ class Luban7(torch.nn.Module):
         token_reprs = self.compute_token_reprs(batch_data)
         scores = self.ner_score(token_reprs)
         gold_tags = torch.tensor(batch_pad(gold_tags, 0))
-        masks = torch.tensor(batch_mask(gold_tags, mask_zero=True)).byte()
+        masks = torch.tensor(batch_mask(gold_tags, mask_zero=True)).byte().to(self.device)
         crf_loss = self.ner_crf(scores, gold_tags, masks, reduction="mean")
         return - crf_loss
 
@@ -233,7 +233,7 @@ class Luban7(torch.nn.Module):
         chars = group_fields(batch_data, keys="chars")
         token_reprs = self.compute_token_reprs(batch_data)
         scores = self.ner_score(token_reprs)
-        masks = torch.tensor(batch_mask(chars, mask_zero=True)).byte()
+        masks = torch.tensor(batch_mask(chars, mask_zero=True)).byte().to(self.device)
         results = self.ner_crf.decode(scores, masks)
         return results
 
@@ -275,7 +275,7 @@ class Luban7(torch.nn.Module):
 
         if config.ctx_type in ['include', 'exclude']:
             left_ctx_reprs, right_ctx_reprs = self.context_encoder(token_reprs, text_lens)
-            if frag_reprs:
+            if frag_reprs is not None:
                 frag_reprs = torch.cat([frag_reprs, left_ctx_reprs, right_ctx_reprs], dim=1)
             else:
                 frag_reprs = torch.cat([left_ctx_reprs, right_ctx_reprs], dim=1)
