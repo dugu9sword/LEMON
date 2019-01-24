@@ -1,5 +1,5 @@
 from buff import DataSet, create_folder, log, analyze_length_count, analyze_vocab_count
-from typing import NamedTuple, List
+from typing import NamedTuple, List, Union
 import re
 import math
 from collections import defaultdict
@@ -8,9 +8,9 @@ import os
 usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
                              "dataset/ontonotes4/dev.mix.bmes",
                              "dataset/ontonotes4/test.mix.bmes"),
-                    "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
-                             "dataset/ontonotes4/tiny.mix.bmes",
-                             "dataset/ontonotes4/tiny.mix.bmes")}
+                    "tiny": ("dataset/ontonotes4/dev.mix.bmes",
+                             "dataset/ontonotes4/dev.mix.bmes",
+                             "dataset/ontonotes4/dev.mix.bmes")}
 
 
 def load_sentences(file_path, sep=r"\s+"):
@@ -40,6 +40,7 @@ Datum = NamedTuple("Datum", [("chars", List[int]),
                              ("poss", List[int]),
                              ("ners", List[int]),
                              ("labels", List[SpanLabel])])
+
 
 
 class Sp:

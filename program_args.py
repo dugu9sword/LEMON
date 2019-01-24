@@ -11,6 +11,8 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
+        self.crf_training = False
+
         # embedding settings
         self.char_emb_size = 50
         self.bichar_emb_size = 0
@@ -87,3 +89,5 @@ class ProgramArgs(argparse.Namespace):
                 print("\t--{}={}".format(key, value))
         assert isinstance(parsed_args, ProgramArgs)
         return parsed_args  # type: ProgramArgs
+
+config = ProgramArgs.parse(True)

@@ -7,7 +7,7 @@ import re
 import pickle
 import random
 import argparse
-from typing import List, Dict, NamedTuple
+from typing import List, Dict, NamedTuple, Union
 from colorama import Fore, Back
 # import psutil
 from sklearn.metrics import precision_recall_fscore_support as sklearn_prf
@@ -380,3 +380,31 @@ def analyze_vocab_count(vocab_count: dict):
             vocab_size[cid], vocab_size[cid] / vocab_size[0],
             count[cid], count[cid] / count[0]
         ))
+
+
+
+def group_fields(lst: List[object],
+                 keys: Union[str, List[str]] = None,
+                 indices: Union[int, List[int]] = None):
+    assert keys is None or indices is None
+    is_single = False
+    if keys:
+        if not isinstance(keys, list):
+            keys = [keys]
+            is_single = True
+        indices = []
+        for key in keys:
+            obj_type = type(lst[0])
+            idx = obj_type._fields.index(key)
+            indices.append(idx)
+    else:
+        if not isinstance(indices, list):
+            indices = [indices]
+            is_single = True
+    rets = []
+    for idx in indices:
+        rets.append(list(map(lambda item: item[idx], lst)))
+    if is_single:
+        return rets[0]
+    else:
+        return rets

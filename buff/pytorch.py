@@ -206,3 +206,17 @@ def focal_loss(inputs,
         raise Exception()
     return loss
 
+class NonLinearLayerWithRes(torch.nn.Module):
+    def __init__(self, d_in, d_hidden, dropout):
+        super(NonLinearLayerWithRes, self).__init__()
+        self.fc1 = torch.nn.Linear(d_in, d_hidden)
+        self.fc2 = torch.nn.Linear(d_hidden, d_in)
+        self.drop = torch.nn.Dropout(dropout)
+
+    def forward(self, x):
+        out = self.fc2(F.relu(self.fc1(x)))
+        out += x
+        out = self.drop(out)
+        # out = torch.nn.LayerNorm(out)
+        return out
+
