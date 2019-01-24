@@ -146,7 +146,7 @@ def load_word2vec(embedding: torch.nn.Embedding,
                 if norm:
                     pre_embedding[word_dict[word]] = __norm2one(np.array(emb))
                 else:
-                    pre_embedding[word_dict[word]] = np.array(emb)
+                    pre_embedding[word_dict[word]] = np.array(emb) / 6
         log("Pre_train match case: {:.4f}".format(found / len(word_dict)))
         if cached_name:
             save_var(pre_embedding, cache)

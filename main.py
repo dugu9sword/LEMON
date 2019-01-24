@@ -91,11 +91,12 @@ def main():
         opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
     elif config.opt == 'sparseadam':
         opt = torch.optim.SparseAdam(luban7.parameters(), lr=0.001)
+    elif config.opt == 'SGD':
+        opt = torch.optim.SGD(luban7.parameters(), lr=0.01, momentum=0.9)
     else:
         raise Exception
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
-    # opt = torch.optim.SGD(luban7.parameters(), lr=0.1, momentum=0.9)
 
     epoch_id = -1
     while True:
@@ -119,34 +120,33 @@ def main():
                 batch_data = train_set.next_batch(config.batch_size)
                 batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)
 
+                # >>> CRF
                 crf_loss = luban7.crf_nll(batch_data)
-                preds = luban7.crf_decode(batch_data)
-                crf_accu = crf_evaluator.eval(preds, group_fields(batch_data, "ners"))[2]
+                crf_f1 = crf_evaluator.eval(luban7.crf_decode(batch_data),
+                                            group_fields(batch_data, "ners"))[2]
+                # <<< CRF
 
+                # >>> Luban
                 score, span_ys = luban7.get_span_score_tags(batch_data)
                 luban_loss = focal_loss(inputs=score,
                                         targets=torch.tensor(span_ys).to(device),
                                         gamma=config.focal_gamma)
                 score_probs = F.softmax(score, dim=1)
-                luban_accu = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+                luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+                # <<< Luban
 
                 loss = config.crf * crf_loss + (1 - config.crf) * luban_loss
 
                 progress.update(len(batch_data))
-                log("".join([
-                    "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
+                log("[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
                     "b: {:.4f} / c:{:.4f} / r: {:.4f} "
-                        .format(progress.batch_time, progress.cost_time, progress.rest_time),
+                    .format(progress.batch_time, progress.cost_time, progress.rest_time),
                     "crf loss: {:.4f} ".format(crf_loss.item()),
-                    "accuracy: {:.4f}".format(crf_accu)])
-                )
-                log("".join([
-                    "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
-                    "b: {:.4f} / c:{:.4f} / r: {:.4f} "
-                        .format(progress.batch_time, progress.cost_time, progress.rest_time),
-                    "loss: {:.4f} ".format(luban_loss.item()),
-                    "accuracy: {:.4f}".format(luban_accu)])
-                )
+                    "crf f1: {:.4f}".format(crf_f1),
+                    "luban loss: {:.4f} ".format(luban_loss.item()),
+                    "luban precision: {:.4f}".format(luban_precision)
+                    )
+
 
                 opt.zero_grad()
                 loss.backward()
@@ -182,11 +182,12 @@ def main():
                     texts = list(map(lambda x: x[0], batch_data))
                     text_lens = batch_lens(texts)
 
-                    # CRF
+                    # >>> CRF
                     results = luban7.crf_decode(batch_data)
                     crf_evaluator.eval(results, group_fields(batch_data, "ners"))
+                    # <<< CRF
 
-                    # Luban
+                    # >>> Luban
                     score, span_ys = luban7.get_span_score_tags(batch_data)
                     score_probs = F.softmax(score, dim=1)
 
@@ -218,6 +219,7 @@ def main():
                         luban_evaluator.decode(luban_spans)
                         offset += len(enum_spans)
                     log_flush_buffer()
+                    # <<< Luban
 
                     progress.update(len(batch_data))
 

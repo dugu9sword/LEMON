@@ -11,7 +11,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
-        self.crf = 0.1
+        self.crf = 1
 
         # embedding settings
         self.char_emb_size = 50
@@ -19,10 +19,10 @@ class ProgramArgs(argparse.Namespace):
         self.seg_emb_size = 25
         self.pos_emb_size = 25
         self.pos_bmes = 'off'
-        # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
+        self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
         # self.char_emb_pretrain = "word2vec/sgns/sgns.merge.char"
         # self.char_emb_pretrain = "word2vec/fasttext/wiki.zh.vec"
-        self.char_emb_pretrain = "off"
+        # self.char_emb_pretrain = "off"
 
         # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
         self.bichar_emb_pretrain = 'off'

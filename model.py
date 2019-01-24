@@ -41,7 +41,7 @@ class Luban7(torch.nn.Module):
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
                           word2vec_path=config.char_emb_pretrain,
-                          norm=True,
+                          norm=False,
                           word_dict=self.char2idx,
                           cached_name="{}.{}.char".format(
                               config.char_emb_pretrain.split('/')[1],
@@ -50,14 +50,12 @@ class Luban7(torch.nn.Module):
         if config.bichar_emb_size > 0 and config.bichar_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.bichar_embeds,
                           word2vec_path=config.bichar_emb_pretrain,
-                          norm=True,
+                          norm=False,
                           word_dict=self.bichar2idx,
                           cached_name="{}.{}.bichar".format(
                               config.bichar_emb_pretrain.split('/')[1],
                               config.bichar_count_gt)
                           )
-        torch.nn.init.normal_(self.embeds.seg_embeds.weight, 0,
-                              torch.std(self.embeds.char_embeds.weight).item())
         self.embeds.show_mean_std()
 
         embed_dim = self.embeds.embedding_dim
