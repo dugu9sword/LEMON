@@ -117,22 +117,17 @@ def load_word2vec(embedding: torch.nn.Embedding,
                   word2vec_path,
                   norm=True,
                   cached_name=None):
-    def __norm2one(vec):
-        root_sum_square = np.sqrt(np.sum(np.square(vec)))
-        return vec / root_sum_square
-
     cache = "{}{}".format(cached_name, ".norm" if norm else "")
     if cached_name and exist_var(cache):
         log("Load vocab from cache {}".format(cache))
         pre_embedding = load_var(cache)
     else:
         log("Load vocab from {}".format(word2vec_path))
-        scale = np.sqrt(3.0 / embedding.embedding_dim)
         pre_embedding = np.random.normal(0, 1, embedding.weight.size())
-        wordvec_file = open(word2vec_path, errors='ignore')
+        word2vec_file = open(word2vec_path, errors='ignore')
         # x = 0
         found = 0
-        for line in wordvec_file.readlines():
+        for line in word2vec_file.readlines():
             # x += 1
             # log("Process line {} in file {}".format(x, word2vec_path))
             split = re.split(r"\s+", line.strip())
@@ -142,12 +137,10 @@ def load_word2vec(embedding: torch.nn.Embedding,
             word = split[0]
             if word in word_dict:
                 found += 1
-                emb = list(map(float, split[1:]))
-                if norm:
-                    pre_embedding[word_dict[word]] = __norm2one(np.array(emb))
-                else:
-                    pre_embedding[word_dict[word]] = np.array(emb) / 6
+                pre_embedding[word_dict[word]] = np.array(list(map(float, split[1:])))
         log("Pre_train match case: {:.4f}".format(found / len(word_dict)))
+        if norm:
+            pre_embedding = pre_embedding / np.std(pre_embedding)
         if cached_name:
             save_var(pre_embedding, cache)
     embedding.weight.data.copy_(torch.from_numpy(pre_embedding))
@@ -206,6 +199,7 @@ def focal_loss(inputs,
         raise Exception()
     return loss
 
+
 class NonLinearLayerWithRes(torch.nn.Module):
     def __init__(self, d_in, d_hidden, dropout):
         super(NonLinearLayerWithRes, self).__init__()
@@ -219,4 +213,3 @@ class NonLinearLayerWithRes(torch.nn.Module):
         out = self.drop(out)
         # out = torch.nn.LayerNorm(out)
         return out
-

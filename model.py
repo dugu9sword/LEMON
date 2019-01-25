@@ -41,20 +41,20 @@ class Luban7(torch.nn.Module):
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
                           word2vec_path=config.char_emb_pretrain,
-                          norm=False,
+                          norm=True,
                           word_dict=self.char2idx,
                           cached_name="{}.{}.char".format(
                               config.char_emb_pretrain.split('/')[1],
-                              config.char_count_gt)
+                              config.char_count_gt) if config.load_from_cache else None
                           )
         if config.bichar_emb_size > 0 and config.bichar_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.bichar_embeds,
                           word2vec_path=config.bichar_emb_pretrain,
-                          norm=False,
+                          norm=True,
                           word_dict=self.bichar2idx,
                           cached_name="{}.{}.bichar".format(
                               config.bichar_emb_pretrain.split('/')[1],
-                              config.bichar_count_gt)
+                              config.bichar_count_gt) if config.load_from_cache else None
                           )
         self.embeds.show_mean_std()
 

@@ -121,37 +121,44 @@ def main():
                 batch_data = sorted(batch_data, key=lambda x: len(x[0]), reverse=True)
 
                 # >>> CRF
-                crf_loss = luban7.crf_nll(batch_data)
-                crf_f1 = crf_evaluator.eval(luban7.crf_decode(batch_data),
-                                            group_fields(batch_data, "ners"))[2]
+                if config.crf == 0.0:
+                    crf_loss = 0.0
+                    crf_log = "no crf"
+                else:
+                    crf_loss = luban7.crf_nll(batch_data)
+                    crf_f1 = crf_evaluator.eval(luban7.crf_decode(batch_data),
+                                                group_fields(batch_data, "ners"))[2]
+                    crf_log = "crf loss: {:.4f} f1: {:.4f} ".format(crf_loss.item(), crf_f1)
                 # <<< CRF
 
                 # >>> Luban
-                score, span_ys = luban7.get_span_score_tags(batch_data)
-                luban_loss = focal_loss(inputs=score,
-                                        targets=torch.tensor(span_ys).to(device),
-                                        gamma=config.focal_gamma)
-                score_probs = F.softmax(score, dim=1)
-                luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+                if config.crf == 1.0:
+                    luban_loss = 0
+                    luban_log = "no luban"
+                else:
+                    score, span_ys = luban7.get_span_score_tags(batch_data)
+                    luban_loss = focal_loss(inputs=score,
+                                            targets=torch.tensor(span_ys).to(device),
+                                            gamma=config.focal_gamma)
+                    score_probs = F.softmax(score, dim=1)
+                    luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+                    luban_log = "luban loss: {:.4f} precision: {:.4f}".format(luban_loss.item(), luban_precision)
                 # <<< Luban
 
                 loss = config.crf * crf_loss + (1 - config.crf) * luban_loss
 
                 progress.update(len(batch_data))
-                log("[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
-                    "b: {:.4f} / c:{:.4f} / r: {:.4f} "
-                    .format(progress.batch_time, progress.cost_time, progress.rest_time),
-                    "crf loss: {:.4f} ".format(crf_loss.item()),
-                    "crf f1: {:.4f}".format(crf_f1),
-                    "luban loss: {:.4f} ".format(luban_loss.item()),
-                    "luban precision: {:.4f}".format(luban_precision)
-                    )
-
+                log(
+                    "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
+                    "b: {:.4f} / c:{:.4f} / r: {:.4f} ".format(
+                        progress.batch_time, progress.cost_time, progress.rest_time),
+                    crf_log, luban_log
+                )
 
                 opt.zero_grad()
                 loss.backward()
-                if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
-                    pdb.set_trace()
+                # if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
+                #     pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
 
@@ -183,48 +190,53 @@ def main():
                     text_lens = batch_lens(texts)
 
                     # >>> CRF
-                    results = luban7.crf_decode(batch_data)
-                    crf_evaluator.eval(results, group_fields(batch_data, "ners"))
+                    if config.crf != 0.0:
+                        results = luban7.crf_decode(batch_data)
+                        crf_evaluator.eval(results, group_fields(batch_data, "ners"))
+
+                        log("<EVAL> CRF: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
+
                     # <<< CRF
 
                     # >>> Luban
-                    score, span_ys = luban7.get_span_score_tags(batch_data)
-                    score_probs = F.softmax(score, dim=1)
+                    if config.crf != 1.0:
+                        score, span_ys = luban7.get_span_score_tags(batch_data)
+                        score_probs = F.softmax(score, dim=1)
 
-                    pred = cast_list(torch.argmax(score, 1))
+                        pred = cast_list(torch.argmax(score, 1))
 
-                    offset = 0
-                    for bid in range(len(text_lens)):
-                        log_to_buffer("[{:>4}] {}".format(
-                            progress.complete_num + bid,
-                            idx2str(batch_data[bid].chars)))
-                        enum_spans = enum_span_by_length(text_lens[bid])
-                        # fragment_score = score[offset: offset + len(enum_spans)]
-                        # log(fragment_score)
-                        luban_spans = []
-                        for sid, span in enumerate(enum_spans):
-                            begin_idx, end_idx = span
-                            span_offset = sid + offset
-                            if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                                luban_span = LubanSpan(
-                                    bid=begin_idx, eid=end_idx, lid=pred[span_offset],
-                                    pred_prob=score_probs[span_offset][pred[span_offset]],
-                                    gold_prob=score_probs[span_offset][span_ys[span_offset]],
-                                    pred_label=idx2label[pred[span_offset]],
-                                    gold_label=idx2label[span_ys[span_offset]],
-                                    fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
-                                )
-                                luban_spans.append(luban_span)
-                                log_to_buffer(luban_span_to_str(luban_span))
-                        luban_evaluator.decode(luban_spans)
-                        offset += len(enum_spans)
-                    log_flush_buffer()
+                        offset = 0
+                        for bid in range(len(text_lens)):
+                            log_to_buffer("[{:>4}] {}".format(
+                                progress.complete_num + bid,
+                                idx2str(batch_data[bid].chars)))
+                            enum_spans = enum_span_by_length(text_lens[bid])
+                            # fragment_score = score[offset: offset + len(enum_spans)]
+                            # log(fragment_score)
+                            luban_spans = []
+                            for sid, span in enumerate(enum_spans):
+                                begin_idx, end_idx = span
+                                span_offset = sid + offset
+                                if pred[span_offset] != 0 or span_ys[span_offset] != 0:
+                                    luban_span = LubanSpan(
+                                        bid=begin_idx, eid=end_idx, lid=pred[span_offset],
+                                        pred_prob=score_probs[span_offset][pred[span_offset]],
+                                        gold_prob=score_probs[span_offset][span_ys[span_offset]],
+                                        pred_label=idx2label[pred[span_offset]],
+                                        gold_label=idx2label[span_ys[span_offset]],
+                                        fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
+                                    )
+                                    luban_spans.append(luban_span)
+                                    log_to_buffer(luban_span_to_str(luban_span))
+                            luban_evaluator.decode(luban_spans)
+                            offset += len(enum_spans)
+                        log_flush_buffer()
+
+                        log("<EVAL> Luban: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
                     # <<< Luban
 
                     progress.update(len(batch_data))
 
-                log("CRF: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
-                log("Luban: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
 
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 

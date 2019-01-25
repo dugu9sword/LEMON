@@ -42,7 +42,6 @@ Datum = NamedTuple("Datum", [("chars", List[int]),
                              ("labels", List[SpanLabel])])
 
 
-
 class Sp:
     pad = "<pad>"
     oov = "<oov>"

@@ -11,7 +11,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
-        self.crf = 1
+        self.crf = 0.0
 
         # embedding settings
         self.char_emb_size = 50
