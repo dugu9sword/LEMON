@@ -15,8 +15,6 @@ log_to_buffer("ff")
 log_to_buffer("ff")
 log_flush_buffer()
 
-with time_record():
-    for i in range(1000):
-        # print("", "", "")
-        log_to_buffer("", "", "")
-    log_flush_buffer()
+embeds = torch.nn.Embedding(5, 2, sparse=True)
+
+print(embeds.weight)

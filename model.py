@@ -37,7 +37,8 @@ class Luban7(torch.nn.Module):
                                    bichar_vocab_size=len(bichar2idx),
                                    bichar_emb_size=config.bichar_emb_size,
                                    pos_vocab_size=len(pos2idx),
-                                   pos_emb_size=config.pos_emb_size)
+                                   pos_emb_size=config.pos_emb_size,
+                                   sparse=config.sparse_embed)
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
                           word2vec_path=config.char_emb_pretrain,

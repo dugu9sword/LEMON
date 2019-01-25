@@ -87,21 +87,34 @@ def main():
                     ner2idx=ner2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
-    opt = {
-        "adam": lambda: torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay),
-        "sgd": lambda: torch.optim.SGD(luban7.parameters(), lr=0.01, momentum=0.9),
-        "rmsprop": lambda: torch.optim.RMSprop(luban7.parameters(), weight_decay=config.weight_decay)
-    }[config.opt]()
-    lr_scl = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[20, 25], gamma=0.1)
+    if config.use_sparse_embed:
+        params = list(luban7.named_parameters())
+        dense_params = []
+        sparse_params = []
+        for pid in range(len(params)):
+            if "embeds" in params[pid][0]:
+                sparse_params.append(params[pid][1])
+            else:
+                dense_params.append(params[pid][1])
+        opt = torch.optim.Adam(dense_params, lr=0.001, weight_decay=config.weight_decay)
+        embed_opt = torch.optim.SparseAdam(sparse_params, lr=0.001)
+    else:
+        opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
+    # lr_scl = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[20, 25], gamma=0.5)
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
 
     epoch_id = -1
     while True:
-        lr_scl.step(epoch_id)
+        """
+        Epoch Level Pre-processing
+        """
+        # lr_scl.step(epoch_id)
         epoch_id += 1
         if epoch_id == config.epoch_max:
             break
+        luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
+        luban7.embeds.show_mean_std()
 
         """
         Training
@@ -154,13 +167,18 @@ def main():
                     crf_log, luban_log
                 )
 
+                # update gradients
                 opt.zero_grad()
+                if config.use_sparse_embed:
+                    embed_opt.zero_grad()
                 loss.backward()
                 if config.check_nan:
                     if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
                         pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
+                if config.use_sparse_embed:
+                    embed_opt.step()
 
             log("<<< epoch {} train".format(epoch_id))
 
@@ -193,7 +211,6 @@ def main():
                     if config.crf != 0.0:
                         results = luban7.crf_decode(batch_data)
                         crf_evaluator.eval(results, group_fields(batch_data, "ners"))
-
 
                     # <<< CRF
 
@@ -235,9 +252,16 @@ def main():
 
                     progress.update(len(batch_data))
 
-                log("<EVAL>: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
-                log("<EVAL>: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
+                log("** result.crf epoch {} on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
+                    epoch_id, set_name, *crf_evaluator.prf))
+                log("** result.luban epoch {} on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
+                    epoch_id, set_name, *luban_evaluator.prf))
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
+
+        """
+        Epoch post-processing
+        """
+        pass
 
 
 if __name__ == '__main__':

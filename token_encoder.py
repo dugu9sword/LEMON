@@ -8,21 +8,23 @@ class MixEmbedding(torch.nn.Module):
                  char_vocab_size, char_emb_size,
                  bichar_vocab_size, bichar_emb_size,
                  seg_vocab_size, seg_emb_size,
-                 pos_vocab_size, pos_emb_size):
+                 pos_vocab_size, pos_emb_size,
+                 sparse=False):
         super(MixEmbedding, self).__init__()
-        self.char_embeds = torch.nn.Embedding(char_vocab_size, char_emb_size)
+        self.char_embeds = torch.nn.Embedding(char_vocab_size, char_emb_size, sparse=sparse)
         if bichar_emb_size > 0:
-            self.bichar_embeds = torch.nn.Embedding(bichar_vocab_size, bichar_emb_size)
+            self.bichar_embeds = torch.nn.Embedding(bichar_vocab_size, bichar_emb_size, sparse=sparse)
         else:
             self.bichar_embeds = None
         if seg_emb_size > 0:
-            self.seg_embeds = torch.nn.Embedding(seg_vocab_size, seg_emb_size)
+            self.seg_embeds = torch.nn.Embedding(seg_vocab_size, seg_emb_size, sparse=sparse)
         else:
             self.seg_embeds = None
         if pos_emb_size > 0:
-            self.pos_embeds = torch.nn.Embedding(pos_vocab_size, pos_emb_size)
+            self.pos_embeds = torch.nn.Embedding(pos_vocab_size, pos_emb_size, sparse=sparse)
         else:
             self.pos_embeds = None
+        self.__fix_grad = False
 
     @property
     def embedding_dim(self):
@@ -36,7 +38,10 @@ class MixEmbedding(torch.nn.Module):
         return ret
 
     def forward(self, pad_chars, pad_bichars, pad_segs, pad_poss):
-        embeds_to_cat = [self.char_embeds(pad_chars)]
+        if self.__fix_grad:
+            embeds_to_cat = [self.char_embeds(pad_chars).detach()]
+        else:
+            embeds_to_cat = [self.char_embeds(pad_chars)]
         if self.seg_embeds:
             embeds_to_cat.append(self.seg_embeds(pad_segs))
         if self.pos_embeds:
@@ -45,6 +50,9 @@ class MixEmbedding(torch.nn.Module):
             embeds_to_cat.append(self.bichar_embeds(pad_bichars))
         final_embs = torch.cat(embeds_to_cat, dim=2)
         return final_embs
+
+    def fix_grad(self, fix_grad=False):
+        self.__fix_grad = fix_grad
 
     def show_mean_std(self):
         log("Embedding Info")

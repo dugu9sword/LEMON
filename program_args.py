@@ -61,10 +61,11 @@ class ProgramArgs(argparse.Namespace):
         self.drop_nonlinear = 0
         self.weight_decay = 1e-5
 
-        self.opt = 'adam'
+        self.use_sparse_embed = True
 
         # development config
         self.batch_size = 32
+        self.epoch_fix_char_emb = 5
         self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full"
@@ -91,5 +92,6 @@ class ProgramArgs(argparse.Namespace):
                 print("\t--{}={}".format(key, value))
         assert isinstance(parsed_args, ProgramArgs)
         return parsed_args  # type: ProgramArgs
+
 
 config = ProgramArgs.parse(True)
