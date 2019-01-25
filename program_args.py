@@ -11,7 +11,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
-        self.crf = 0.0
+        self.crf = 0.5
 
         # embedding settings
         self.char_emb_size = 50
@@ -69,10 +69,12 @@ class ProgramArgs(argparse.Namespace):
         self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full"
-        self.epoch_max = 50
+        self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"
         self.model_ckpt = -1
+        self.check_nan = False
+        self.cuda = 0
 
     @staticmethod
     def parse(verbose=False) -> "ProgramArgs":

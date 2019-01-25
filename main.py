@@ -12,7 +12,7 @@ from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
 import pdb
 
-device = allocate_cuda_device(0)
+device = allocate_cuda_device(config.cuda)
 
 
 @lru_cache(maxsize=None)
@@ -87,19 +87,18 @@ def main():
                     ner2idx=ner2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len).to(device)
-    if config.opt == 'adam':
-        opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
-    elif config.opt == 'sparseadam':
-        opt = torch.optim.SparseAdam(luban7.parameters(), lr=0.001)
-    elif config.opt == 'SGD':
-        opt = torch.optim.SGD(luban7.parameters(), lr=0.01, momentum=0.9)
-    else:
-        raise Exception
+    opt = {
+        "adam": lambda: torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay),
+        "sgd": lambda: torch.optim.SGD(luban7.parameters(), lr=0.01, momentum=0.9),
+        "rmsprop": lambda: torch.optim.RMSprop(luban7.parameters(), weight_decay=config.weight_decay)
+    }[config.opt]()
+    lr_scl = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[20, 25], gamma=0.1)
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
 
     epoch_id = -1
     while True:
+        lr_scl.step(epoch_id)
         epoch_id += 1
         if epoch_id == config.epoch_max:
             break
@@ -150,15 +149,16 @@ def main():
                 progress.update(len(batch_data))
                 log(
                     "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
-                    "b: {:.4f} / c:{:.4f} / r: {:.4f} ".format(
+                    "b: {:.2f} / c:{:.2f} / r: {:.2f} ".format(
                         progress.batch_time, progress.cost_time, progress.rest_time),
                     crf_log, luban_log
                 )
 
                 opt.zero_grad()
                 loss.backward()
-                # if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
-                #     pdb.set_trace()
+                if config.check_nan:
+                    if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
+                        pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
 
@@ -236,7 +236,6 @@ def main():
                     # <<< Luban
 
                     progress.update(len(batch_data))
-
 
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
