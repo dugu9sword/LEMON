@@ -11,7 +11,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.token_type = "rnn"
 
-        self.crf = 0.5
+        self.crf = 0.0
 
         # embedding settings
         self.char_emb_size = 50
@@ -37,7 +37,7 @@ class ProgramArgs(argparse.Namespace):
         self.rnn_hidden = 256
 
         # fragment encoder
-        self.frag_type = "off"
+        self.frag_type = "rnn"
         self.frag_fusion = 'cat'
         self.frag_fofe_alpha = 0.5
 
@@ -46,8 +46,7 @@ class ProgramArgs(argparse.Namespace):
         self.frag_att_head = 1
 
         # context encoder
-        # self.ctx = 'off'
-        self.ctx_type = 'include'
+        self.ctx_type = 'off'
 
         self.num_nonlinear = 2
 
@@ -74,7 +73,6 @@ class ProgramArgs(argparse.Namespace):
         self.model_name = "off"
         self.model_ckpt = -1
         self.check_nan = False
-        self.cuda = 0
 
     @staticmethod
     def parse(verbose=False) -> "ProgramArgs":

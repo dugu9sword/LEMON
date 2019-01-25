@@ -12,7 +12,7 @@ from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
 import pdb
 
-device = allocate_cuda_device(config.cuda)
+device = allocate_cuda_device(0)
 
 
 @lru_cache(maxsize=None)
@@ -194,7 +194,6 @@ def main():
                         results = luban7.crf_decode(batch_data)
                         crf_evaluator.eval(results, group_fields(batch_data, "ners"))
 
-                        log("<EVAL> CRF: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
 
                     # <<< CRF
 
@@ -232,11 +231,12 @@ def main():
                             offset += len(enum_spans)
                         log_flush_buffer()
 
-                        log("<EVAL> Luban: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
                     # <<< Luban
 
                     progress.update(len(batch_data))
 
+                log("<EVAL>: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*crf_evaluator.prf))
+                log("<EVAL>: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(*luban_evaluator.prf))
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
 
