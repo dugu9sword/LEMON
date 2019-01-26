@@ -65,7 +65,7 @@ class ProgramArgs(argparse.Namespace):
 
         # development config
         self.batch_size = 32
-        self.epoch_fix_char_emb = 5
+        self.epoch_fix_char_emb = 0
         self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full"

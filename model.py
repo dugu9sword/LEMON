@@ -38,7 +38,7 @@ class Luban7(torch.nn.Module):
                                    bichar_emb_size=config.bichar_emb_size,
                                    pos_vocab_size=len(pos2idx),
                                    pos_emb_size=config.pos_emb_size,
-                                   sparse=config.sparse_embed)
+                                   sparse=config.use_sparse_embed)
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
                           word2vec_path=config.char_emb_pretrain,
@@ -200,10 +200,10 @@ class Luban7(torch.nn.Module):
         pad_segs = batch_pad(segs, self.seg2idx[Sp.pad])
         pad_poss = batch_pad(poss, self.pos2idx[Sp.pad])
 
-        pad_chars_tensor = torch.tensor(pad_chars).to(self.device)
-        pad_bichars_tensor = torch.tensor(pad_bichars).to(self.device)
-        pad_segs_tensor = torch.tensor(pad_segs).to(self.device)
-        pad_poss_tensor = torch.tensor(pad_poss).to(self.device)
+        pad_chars_tensor = torch.tensor(pad_chars, device=self.device)
+        pad_bichars_tensor = torch.tensor(pad_bichars, device=self.device)
+        pad_segs_tensor = torch.tensor(pad_segs, device=self.device)
+        pad_poss_tensor = torch.tensor(pad_poss, device=self.device)
 
         input_embs = self.embeds(pad_chars_tensor,
                                  pad_bichars_tensor,
@@ -224,7 +224,7 @@ class Luban7(torch.nn.Module):
         token_reprs = self.compute_token_reprs(batch_data)
         scores = self.ner_score(token_reprs)
         gold_tags = torch.tensor(batch_pad(gold_tags, 0))
-        masks = torch.tensor(batch_mask(gold_tags, mask_zero=True)).byte().to(self.device)
+        masks = torch.tensor(batch_mask(gold_tags, mask_zero=True), dtype=torch.uint8, device=self.device)
         crf_loss = self.ner_crf(scores, gold_tags, masks, reduction="mean")
         return - crf_loss
 
@@ -232,7 +232,7 @@ class Luban7(torch.nn.Module):
         chars = group_fields(batch_data, keys="chars")
         token_reprs = self.compute_token_reprs(batch_data)
         scores = self.ner_score(token_reprs)
-        masks = torch.tensor(batch_mask(chars, mask_zero=True)).byte().to(self.device)
+        masks = torch.tensor(batch_mask(chars, mask_zero=True), dtype=torch.uint8, device=self.device)
         results = self.ner_crf.decode(scores, masks)
         return results
 

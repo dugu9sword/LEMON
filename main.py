@@ -150,7 +150,7 @@ def main():
                 else:
                     score, span_ys = luban7.get_span_score_tags(batch_data)
                     luban_loss = focal_loss(inputs=score,
-                                            targets=torch.tensor(span_ys).to(device),
+                                            targets=torch.tensor(span_ys, device=device),
                                             gamma=config.focal_gamma)
                     score_probs = F.softmax(score, dim=1)
                     luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)

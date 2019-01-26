@@ -32,8 +32,8 @@ class ContextEnumerator(torch.nn.Module):
 
         if self.include:
             b2e_ids, e2b_ids = gen_inc_context_ids(lengths, self.max_span_len)
-            left_contexts = b2e_outputs.index_select(0, torch.tensor(b2e_ids).to(inputs.device))
-            right_contexts = e2b_outputs.index_select(0, torch.tensor(e2b_ids).to(inputs.device))
+            left_contexts = b2e_outputs.index_select(0, torch.tensor(b2e_ids, device=inputs.device))
+            right_contexts = e2b_outputs.index_select(0, torch.tensor(e2b_ids, device=inputs.device))
         else:
             b2e_ids, e2b_ids = gen_exc_context_ids(lengths, self.max_span_len)
 
@@ -47,7 +47,7 @@ class ContextEnumerator(torch.nn.Module):
             # print(self.b_start_tensor[0][:10])
             # print(b2e_outputs[0][:10])
 
-            left_contexts = b2e_outputs.index_select(0, torch.tensor(b2e_ids).to(inputs.device))
-            right_contexts = e2b_outputs.index_select(0, torch.tensor(e2b_ids).to(inputs.device))
+            left_contexts = b2e_outputs.index_select(0, torch.tensor(b2e_ids, device=inputs.device))
+            right_contexts = e2b_outputs.index_select(0, torch.tensor(e2b_ids, device=inputs.device))
 
         return left_contexts, right_contexts

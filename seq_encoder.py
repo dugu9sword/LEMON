@@ -20,7 +20,7 @@ class FofeSeqEncoder(BaseSeqEncoder):
         if batch_first:
             inputs = inputs.transpose(0, 1)
         time_steps, batch_size, size = inputs.size()
-        output = torch.zeros(batch_size, size).to(inputs.device)
+        output = torch.zeros(batch_size, size, device=inputs.device)
         outputs = []
         for t, t_input in enumerate(inputs):
             output = output * self.alpha + t_input
@@ -39,7 +39,7 @@ class AverageSeqEncoder(BaseSeqEncoder):
         if batch_first:
             inputs = inputs.transpose(0, 1)
         time_steps, batch_size, size = inputs.size()
-        output = torch.zeros(batch_size, size).to(inputs.device)
+        output = torch.zeros(batch_size, size, device=inputs.device)
         outputs = []
         for t, t_input in enumerate(inputs):
             output = (output * t + t_input) / (t + 1)
