@@ -50,6 +50,12 @@ class ProgramArgs(argparse.Namespace):
 
         self.num_nonlinear = 2
 
+        # lexicon embedding
+        self.use_lexicon = False
+        self.match_emb_size = 25
+        self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
+        self.lexicon_emb_dim = 50
+
         # loss
         self.focal_gamma = 0
         self.focal_reduction = "mean"
@@ -65,7 +71,8 @@ class ProgramArgs(argparse.Namespace):
 
         # development config
         self.batch_size = 32
-        self.epoch_fix_char_emb = 0
+        self.epoch_fix_char_emb = 5
+        self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = True
         self.train_on = True
         self.use_data_set = "full"

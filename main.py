@@ -6,7 +6,7 @@ import torch
 from buff import focal_loss, group_fields
 import torch.nn.functional as F
 from functools import lru_cache
-from dataset import ConllDataSet, SpanLabel, SpanPred, load_vocab, gen_vocab, usable_data_sets
+from dataset import ConllDataSet, gen_lexicon_vocab, load_vocab, gen_vocab, usable_data_sets, match2idx
 from program_args import config
 from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
@@ -41,22 +41,25 @@ def main():
               bichar_count_gt=config.bichar_count_gt,
               use_cache=config.load_from_cache,
               ignore_tag_bmes=config.pos_bmes == 'off')
+    gen_lexicon_vocab(*used_data_set,
+                      word2vec_path="word2vec/lattice_lstm/ctb.50d.vec",
+                      out_folder=vocab_folder,
+                      use_cache=config.load_from_cache)
+
     char2idx, idx2char = load_vocab("{}/char.vocab".format(vocab_folder))
     bichar2idx, idx2bichar = load_vocab("{}/bichar.vocab".format(vocab_folder))
     seg2idx, idx2seg = load_vocab("{}/seg.vocab".format(vocab_folder))
     pos2idx, idx2pos = load_vocab("{}/pos.vocab".format(vocab_folder))
     ner2idx, idx2ner = load_vocab("{}/ner.vocab".format(vocab_folder))
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
-
-    word2idx, idx2word, word_embeds = load_word_and_its_vec(
-        "word2vec/lattice_lstm/ctb.50d.vec", norm=True, cached_name="word2vec")
+    lexicon2idx, idx2lexicon = load_vocab("{}/lexicon.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
         "train_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[0],
-            word2idx=word2idx,
+            lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             ignore_pos_bmes=config.pos_bmes == 'off',
@@ -67,7 +70,7 @@ def main():
         "dev_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[1],
-            word2idx=word2idx,
+            lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             max_text_len=config.max_sentence_length,
@@ -78,7 +81,7 @@ def main():
         "test_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[2],
-            word2idx=word2idx,
+            lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             max_text_len=config.max_sentence_length,
@@ -94,7 +97,9 @@ def main():
                     pos2idx=pos2idx,
                     ner2idx=ner2idx,
                     label2idx=label2idx,
-                    longest_text_len=longest_text_len).to(device)
+                    longest_text_len=longest_text_len,
+                    lexicon2idx=lexicon2idx,
+                    match2idx=match2idx).to(device)
     if config.use_sparse_embed:
         params = list(luban7.named_parameters())
         dense_params = []
@@ -121,7 +126,12 @@ def main():
         epoch_id += 1
         if epoch_id == config.epoch_max:
             break
-        luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
+        # luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
+        if config.use_lexicon:
+            for param in luban7.lexicon_embeds.parameters():
+                param.requires_grad = epoch_id > config.epoch_fix_lexicon_emb
+        for param in luban7.embeds.parameters():
+            param.requires_grad = epoch_id > config.epoch_fix_char_emb
         luban7.embeds.show_mean_std()
 
         """

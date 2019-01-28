@@ -158,8 +158,9 @@ def batch_drop(idx: List[List], drop_rate) -> List[List]:
     return list(map(lambda x: random_drop(x, drop_rate), idx))
 
 
-def batch_pad(idx: List[List], pad_ele=0) -> List[List]:
-    pad_len = max(map(len, idx))
+def batch_pad(idx: List[List], pad_ele=0, pad_len=None) -> List[List]:
+    if pad_len is None:
+        pad_len = max(map(len, idx))
     return list(map(lambda x: x + [pad_ele] * (pad_len - len(x)), idx))
 
 

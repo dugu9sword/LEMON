@@ -8,7 +8,7 @@ from context_enumerator import ContextEnumerator
 from seq_encoder import RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
-from dataset import Sp
+from dataset import Sp, AllFragMatches
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from attention import MultiHeadAttention, gen_att_mask
 from torch_crf import CRF
@@ -19,6 +19,7 @@ class Luban7(torch.nn.Module):
 
     def __init__(self,
                  char2idx, bichar2idx, seg2idx, pos2idx, ner2idx,
+                 lexicon2idx, match2idx,
                  label2idx,
                  longest_text_len,
                  ):
@@ -158,6 +159,32 @@ class Luban7(torch.nn.Module):
             for _ in range(config.num_nonlinear)
         ])
 
+        """ Lexicon Embedding """
+        if config.use_lexicon:
+            self.lexicon_embeds = torch.nn.Embedding(len(lexicon2idx),
+                                                     config.lexicon_emb_dim,
+                                                     sparse=config.use_sparse_embed)
+            self.match_embeds = torch.nn.Embedding(len(match2idx),
+                                                   config.match_emb_size,
+                                                   sparse=config.use_sparse_embed)
+            load_word2vec(
+                self.lexicon_embeds,
+                lexicon2idx,
+                config.lexicon_emb_pretrain,
+                norm=True,
+                cached_name="{}.lexicon".format(
+                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache else None
+            )
+            self.lexicon_attention = MultiHeadAttention(d_q=frag_dim,
+                                                        d_k=50 + config.match_emb_size,
+                                                        d_v=50 + config.match_emb_size,
+                                                        d_att_k=frag_dim // 2,
+                                                        d_att_v=frag_dim // 2,
+                                                        n_head=2,
+                                                        dropout=config.drop_default,
+                                                        d_out=frag_dim)
+            frag_dim = frag_dim * 2
+
         self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
 
@@ -189,9 +216,9 @@ class Luban7(torch.nn.Module):
         return span_ys
 
     def compute_token_reprs(self, batch_data):
-        chars, bichars, segs, poss, ners, labels = group_fields(
+        chars, bichars, segs, poss = group_fields(
             batch_data,
-            keys=["chars", "bichars", "segs", "poss", "ners", "labels"]
+            keys=["chars", "bichars", "segs", "poss"]
         )
         text_lens = batch_lens(chars)
 
@@ -283,8 +310,29 @@ class Luban7(torch.nn.Module):
         else:
             raise Exception
 
-        for non_linear in self.non_linear_stack:
-            frag_reprs = non_linear(frag_reprs)
+        if config.use_lexicon:
+            lexmatches = group_fields(batch_data, keys='lexmatches')  # type: AllFragMatches
+            lexmatches = [item.matches for sublist in lexmatches for item in sublist]
+            assert len(lexmatches) == frag_reprs.size(0)
+            frag_match_lexicons, frag_match_types = [], []
+            for it_match in lexmatches:
+                if len(it_match) == 0:
+                    frag_match_lexicons.append([])
+                    frag_match_types.append([])
+                else:
+                    frag_match_lexicons.append(group_fields(it_match, keys="lex_idx"))
+                    frag_match_types.append(group_fields(it_match, keys="match_type"))
+
+            mask = gen_att_mask(batch_lens(frag_match_lexicons), 8, 1).to(self.device)
+            frag_match_lexicons = batch_pad(frag_match_lexicons, pad_len=8)
+            frag_match_types = batch_pad(frag_match_types, pad_len=8)
+            frag_match_lexicons = torch.tensor(frag_match_lexicons, dtype=torch.long, device=self.device)
+            frag_match_types = torch.tensor(frag_match_types, dtype=torch.long, device=self.device)
+            mem_lexicon = self.lexicon_embeds(frag_match_lexicons)
+            mem_match = self.match_embeds(frag_match_types)
+            memory = torch.cat([mem_lexicon, mem_match], dim=2)
+            att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
+            frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
 
         span_ys = self.gen_span_ys(chars, labels)
         score = frag_reprs @ self.label_weight + self.label_bias

@@ -3,7 +3,6 @@ import torch
 from torch.nn.utils.rnn import PackedSequence
 import torch.nn.functional as F
 from .logging import log
-import pandas
 
 __model_path__ = "saved/models"
 
@@ -145,32 +144,6 @@ def load_word2vec(embedding: torch.nn.Embedding,
         if cached_name:
             save_var(pre_embedding, cache)
     embedding.weight.data.copy_(torch.from_numpy(pre_embedding))
-
-
-def load_word_and_its_vec(word2vec_path,
-                          norm=True,
-                          cached_name=None):
-    cache = "{}{}".format(cached_name, ".norm" if norm else "")
-    if cached_name and exist_var(cache):
-        log("Load vocab from cache {}".format(cache))
-        word2idx, idx2word, embeddings = load_var(cache)
-    else:
-        log("Load vocab from {}".format(word2vec_path))
-        csv = pandas.read_csv(word2vec_path, sep="\\s+")
-        words = csv.values[:, 0]
-        embeddings = csv.values[:, 1:]
-        word2idx = {}
-        for idx, word in enumerate(words):
-            word2idx[word] = idx
-        idx2word = {v: k for k, v in word2idx.items()}
-        print("Embedding num: {} dim: {} mean: {:.3f} std: {:.3f}".format(
-            *embeddings.shape, embeddings.mean(), embeddings.std()
-        ))
-        if norm:
-            embeddings = embeddings / embeddings.std()
-        if cached_name:
-            save_var((word2idx, idx2word, embeddings), cache)
-    return word2idx, idx2word, embeddings
 
 
 def show_mean_std(tensor):

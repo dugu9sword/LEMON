@@ -13,3 +13,4 @@ saved/*
 nogit/*
 
 *.bmes
+/.project

@@ -12,3 +12,14 @@ from buff import *
 from typing import NamedTuple
 
 Pair = NamedTuple("Pair", [("a", object), ("b", object)])
+def fragments(sentence_len, max_span_len) -> List:
+    ret = []
+    for i in range(sentence_len):
+        for j in range(i, i + max_span_len):
+            if j == sentence_len:
+                break
+            ret.append((i, j))
+    return ret
+
+
+print(fragments(4, 10))
