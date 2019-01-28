@@ -382,7 +382,6 @@ def analyze_vocab_count(vocab_count: dict):
         ))
 
 
-
 def group_fields(lst: List[object],
                  keys: Union[str, List[str]] = None,
                  indices: Union[int, List[int]] = None):

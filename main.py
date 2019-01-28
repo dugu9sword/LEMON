@@ -48,11 +48,15 @@ def main():
     ner2idx, idx2ner = load_vocab("{}/ner.vocab".format(vocab_folder))
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 
+    word2idx, idx2word, word_embeds = load_word_and_its_vec(
+        "word2vec/lattice_lstm/ctb.50d.vec", norm=True, cached_name="word2vec")
+
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
         "train_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[0],
+            word2idx=word2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             ignore_pos_bmes=config.pos_bmes == 'off',
@@ -63,18 +67,22 @@ def main():
         "dev_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[1],
+            word2idx=word2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             max_text_len=config.max_sentence_length,
+            max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
     test_set = auto_create(
         "test_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
             data_path=used_data_set[2],
+            word2idx=word2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
             max_text_len=config.max_sentence_length,
+            max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)

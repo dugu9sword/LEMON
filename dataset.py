@@ -1,8 +1,9 @@
-from buff import DataSet, create_folder, log, analyze_length_count, analyze_vocab_count
-from typing import NamedTuple, List, Union
+from buff import DataSet, create_folder, log, analyze_length_count, analyze_vocab_count, group_fields
+from typing import NamedTuple, List, Union, Dict, Tuple
 import re
 import math
 from collections import defaultdict
+from functools import lru_cache
 import os
 
 usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
@@ -27,6 +28,11 @@ def load_sentences(file_path, sep=r"\s+"):
     return ret
 
 
+FragIdx = NamedTuple("FragIdx", [("bid", int), ("eid", int)])
+MatchedWord = NamedTuple("MatchedWord", [("word_idx", int), ("match_type", int)])
+FragMatches = NamedTuple("FragMatches", [("frag", FragIdx), ("matches", List[MatchedWord])])
+AllFragMatches = List[FragMatches]
+
 SpanLabel = NamedTuple("SpanLabel", [("b", int),
                                      ("e", int),
                                      ("y", int)])
@@ -39,6 +45,7 @@ Datum = NamedTuple("Datum", [("chars", List[int]),
                              ("segs", List[int]),
                              ("poss", List[int]),
                              ("ners", List[int]),
+                             ("matches", AllFragMatches),
                              ("labels", List[SpanLabel])])
 
 
@@ -136,20 +143,31 @@ def gen_vocab(data_path, out_folder,
 
 
 # gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
+match2idx = {"full_match": 0,
+             "prefix_match": 1,
+             "suffix_match": 2,
+             "inter_match": 3}
+idx2match = {v: k for k, v in match2idx.items()}
 
 
 class ConllDataSet(DataSet):
 
     def __init__(self, data_path,
+                 word2idx,
                  char2idx, bichar2idx, seg2idx, pos2idx, ner2idx, label2idx,
                  ignore_pos_bmes=False,
-                 max_text_len=math.inf,
-                 max_span_len=math.inf,
+                 max_text_len=19260814,
+                 max_span_len=19260814,
+                 max_match_num=8,
                  sort_by_length=False):
         super(ConllDataSet, self).__init__()
+        self.word2idx = word2idx
+        self.idx2word = {v: k for k, v in self.word2idx.items()}
 
         sentences = load_sentences(data_path)
 
+        self.__max_text_len = max_text_len
+        self.__max_span_len = max_span_len
         self.__longest_text_len = -1
         self.__longest_span_len = -1
 
@@ -199,8 +217,17 @@ class ConllDataSet(DataSet):
                         self.__longest_span_len = max(self.__longest_span_len, label_e - label_b + 1)
 
             if len(chars) < max_text_len:
+                all_frag_matches = match_word_dict(group_fields(sen, indices=0),
+                                                   word2idx=word2idx,
+                                                   max_span_len=max_span_len,
+                                                   max_match_num=max_match_num)
+                # for ele in all_frag_matches:
+                #     print("".join(group_fields(sen, indices=0)[ele.frag.bid: ele.frag.eid + 1]))
+                #     for word_idx, match_type in ele.matches:
+                #         print(self.idx2word[word_idx])
                 self.data.append(Datum(chars=chars, bichars=bichars, segs=segs,
-                                       poss=poss, ners=ners, labels=labels))
+                                       poss=poss, ners=ners, labels=labels,
+                                       matches=all_frag_matches))
                 self.__longest_text_len = max(self.__longest_text_len, len(chars))
 
         if sort_by_length:
@@ -218,3 +245,48 @@ class ConllDataSet(DataSet):
     @property
     def longest_span_len(self):
         return self.__longest_span_len
+
+
+@lru_cache(maxsize=None)
+def fragments(sentence_len, max_span_len) -> List[FragIdx]:
+    ret = []
+    for i in range(sentence_len):
+        for j in range(i + 1, i + max_span_len + 1):
+            if j >= sentence_len:
+                break
+            ret.append(FragIdx(i, j - 1))
+    return ret
+
+
+def match_word_dict(chars, word2idx, max_span_len, max_match_num) -> AllFragMatches:
+    mapping_dict = {}  # type: Dict[FragIdx, int]
+    ret = []  # type: AllFragMatches
+    length = len(chars)
+    # print(self.__max_span_len)
+    # print(fragments(length, self.__max_span_len))
+    for i, j in fragments(length, max_span_len):
+        if i != j:
+            word = "".join(chars[i:j + 1])
+            if word in word2idx:
+                mapping_dict[FragIdx(i, j)] = word2idx[word]
+    for i, j in fragments(length, max_span_len):
+        matched_words = []
+        for sub_i in range(i, j + 1):
+            for sub_j in range(sub_i, j + 1):
+                if FragIdx(sub_i, sub_j) in mapping_dict:
+                    if sub_i == i:
+                        if sub_j == j:
+                            m_idx = match2idx['full_match']
+                        else:
+                            m_idx = match2idx['prefix_match']
+                    else:
+                        if sub_j == j:
+                            m_idx = match2idx['suffix_match']
+                        else:
+                            m_idx = match2idx['inter_match']
+                    matched_words.append(MatchedWord(word_idx=mapping_dict[FragIdx(sub_i, sub_j)],
+                                                     match_type=m_idx))
+                    matched_words.sort(key=lambda x: x[1])
+                    matched_words = matched_words[:max_match_num]
+        ret.append(FragMatches(FragIdx(i, j), matched_words))
+    return ret

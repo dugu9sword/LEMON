@@ -9,12 +9,6 @@ from buff import time_record
 from attention import *
 from buff import *
 
-log_config("test", "cf")
-log_to_buffer("ff")
-log_to_buffer("ff")
-log_to_buffer("ff")
-log_flush_buffer()
+from typing import NamedTuple
 
-embeds = torch.nn.Embedding(5, 2, sparse=True)
-
-print(embeds.weight)
+Pair = NamedTuple("Pair", [("a", object), ("b", object)])
