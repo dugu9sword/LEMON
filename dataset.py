@@ -162,8 +162,8 @@ class ConllDataSet(DataSet):
                  lexicon2idx,
                  char2idx, bichar2idx, seg2idx, pos2idx, ner2idx, label2idx,
                  ignore_pos_bmes=False,
-                 max_text_len=19260814,
-                 max_span_len=19260814,
+                 max_text_len=19260817,
+                 max_span_len=19260817,
                  max_match_num=8,
                  sort_by_length=False):
         super(ConllDataSet, self).__init__()
