@@ -6,6 +6,7 @@ from collections import defaultdict
 from functools import lru_cache
 from buff import exist_var, load_var, save_var
 import os
+from program_args import config
 import numpy as np
 
 usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
@@ -224,7 +225,6 @@ class ConllDataSet(DataSet):
             if len(chars) < max_text_len:
                 all_frag_matches = match_lexicon_dict(group_fields(sen, indices=0),
                                                       lexicon2idx=lexicon2idx,
-                                                      max_span_len=max_span_len,
                                                       max_match_num=max_match_num)
                 # for ele in all_frag_matches:
                 #     print("".join(group_fields(sen, indices=0)[ele.frag.bid: ele.frag.eid + 1]))
@@ -263,18 +263,18 @@ def fragments(sentence_len, max_span_len) -> List[FragIdx]:
     return ret
 
 
-def match_lexicon_dict(chars, lexicon2idx, max_span_len, max_match_num) -> AllFragMatches:
+def match_lexicon_dict(chars, lexicon2idx, max_match_num) -> AllFragMatches:
     mapping_dict = {}  # type: Dict[FragIdx, int]
     ret = []  # type: AllFragMatches
     length = len(chars)
     # print(self.__max_span_len)
     # print(fragments(length, self.__max_span_len))
-    for i, j in fragments(length, max_span_len):
+    for i, j in fragments(length, config.max_span_length):
         if i != j:
             lexicon = "".join(chars[i:j + 1])
             if lexicon in lexicon2idx:
                 mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
-    for i, j in fragments(length, max_span_len):
+    for i, j in fragments(length, config.max_span_length):
         matched_lexicons = []
         for sub_i in range(i, j + 1):
             for sub_j in range(sub_i, j + 1):

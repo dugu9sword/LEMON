@@ -2,6 +2,7 @@ import argparse
 
 
 class ProgramArgs(argparse.Namespace):
+    # Never use True/False !
     def __init__(self):
         super(ProgramArgs, self).__init__()
         self.max_span_length = 10
@@ -51,7 +52,7 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.use_lexicon = False
+        self.use_lexicon = "off"
         self.match_emb_size = 25
         self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
         self.lexicon_emb_dim = 50
@@ -67,26 +68,28 @@ class ProgramArgs(argparse.Namespace):
         self.drop_nonlinear = 0
         self.weight_decay = 1e-5
 
-        self.use_sparse_embed = True
+        self.use_sparse_embed = "on"
 
         # development config
         self.batch_size = 32
         self.epoch_fix_char_emb = 5
         self.epoch_fix_lexicon_emb = 5
-        self.load_from_cache = True
-        self.train_on = True
+        self.load_from_cache = "on"
+        self.train_on = "on"
         self.use_data_set = "full"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"
         self.model_ckpt = -1
-        self.check_nan = False
+        self.check_nan = "off"
 
     @staticmethod
     def parse(verbose=False) -> "ProgramArgs":
         parser = argparse.ArgumentParser()
         default_args = ProgramArgs()
         for key, value in default_args.__dict__.items():
+            if type(value) == bool:
+                raise Exception("Bool value is not supported!!!")
             parser.add_argument('--{}'.format(key),
                                 action='store',
                                 default=value,

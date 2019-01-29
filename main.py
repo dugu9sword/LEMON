@@ -39,12 +39,12 @@ def main():
               out_folder=vocab_folder,
               char_count_gt=config.char_count_gt,
               bichar_count_gt=config.bichar_count_gt,
-              use_cache=config.load_from_cache,
+              use_cache=config.load_from_cache == "on",
               ignore_tag_bmes=config.pos_bmes == 'off')
     gen_lexicon_vocab(*used_data_set,
                       word2vec_path="word2vec/lattice_lstm/ctb.50d.vec",
                       out_folder=vocab_folder,
-                      use_cache=config.load_from_cache)
+                      use_cache=config.load_from_cache == "on")
 
     char2idx, idx2char = load_vocab("{}/char.vocab".format(vocab_folder))
     bichar2idx, idx2bichar = load_vocab("{}/bichar.vocab".format(vocab_folder))
@@ -65,7 +65,7 @@ def main():
             ignore_pos_bmes=config.pos_bmes == 'off',
             max_text_len=config.max_sentence_length,
             max_span_len=config.max_span_length,
-            sort_by_length=True), cache=config.load_from_cache)  # type: ConllDataSet
+            sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
     dev_set = auto_create(
         "dev_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
@@ -73,10 +73,10 @@ def main():
             lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            max_text_len=config.max_sentence_length,
-            max_span_len=config.max_span_length,
+            # max_text_len=config.max_sentence_length,
+            # max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
-            sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
+            sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     test_set = auto_create(
         "test_set.{}".format(config.use_data_set),
         lambda: ConllDataSet(
@@ -84,10 +84,10 @@ def main():
             lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            max_text_len=config.max_sentence_length,
-            max_span_len=config.max_span_length,
+            # max_text_len=config.max_sentence_length,
+            # max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
-            sort_by_length=False), cache=config.load_from_cache)  # type: ConllDataSet
+            sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
     longest_text_len = max(train_set.longest_text_len, dev_set.longest_text_len)
 
@@ -100,7 +100,7 @@ def main():
                     longest_text_len=longest_text_len,
                     lexicon2idx=lexicon2idx,
                     match2idx=match2idx).to(device)
-    if config.use_sparse_embed:
+    if config.use_sparse_embed == "on":
         params = list(luban7.named_parameters())
         dense_params = []
         sparse_params = []
@@ -127,7 +127,7 @@ def main():
         if epoch_id == config.epoch_max:
             break
         # luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
-        if config.use_lexicon:
+        if config.use_lexicon == 'on':
             for param in luban7.lexicon_embeds.parameters():
                 param.requires_grad = epoch_id > config.epoch_fix_lexicon_emb
         for param in luban7.embeds.parameters():
@@ -138,7 +138,7 @@ def main():
         Training
         """
         crf_evaluator = CRFEvaluator(idx2tag=idx2ner)
-        if config.train_on:
+        if config.train_on == "on":
             log(">>> epoch {} train".format(epoch_id))
             luban7.train()
             train_set.reset(shuffle=True)
@@ -187,15 +187,15 @@ def main():
 
                 # update gradients
                 opt.zero_grad()
-                if config.use_sparse_embed:
+                if config.use_sparse_embed == "on":
                     embed_opt.zero_grad()
                 loss.backward()
-                if config.check_nan:
+                if config.check_nan == "on":
                     if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
                         pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
                 opt.step()
-                if config.use_sparse_embed:
+                if config.use_sparse_embed == "on":
                     embed_opt.step()
 
             log("<<< epoch {} train".format(epoch_id))
