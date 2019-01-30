@@ -13,6 +13,7 @@ from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from attention import MultiHeadAttention, gen_att_mask
 from torch_crf import CRF
 from program_args import config
+from multi_center_classifier import KCenterClassifier, DynamicCenterClassifier
 
 
 class Luban7(torch.nn.Module):
@@ -185,12 +186,15 @@ class Luban7(torch.nn.Module):
                                                         d_out=frag_dim)
             frag_dim = frag_dim * 2
 
-        self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
-        self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
-
-        std = 1. / math.sqrt(self.label_weight.size(1))
-        self.label_weight.data.uniform_(-std, std)
-        self.label_bias.data.uniform_(-std, std)
+        self.clf = KCenterClassifier(num_classes=len(label2idx),
+                                     k_center=config.k_center,
+                                     dim=frag_dim)
+        # self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
+        # self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
+        #
+        # std = 1. / math.sqrt(self.label_weight.size(1))
+        # self.label_weight.data.uniform_(-std, std)
+        # self.label_bias.data.uniform_(-std, std)
 
     @property
     def device(self):
@@ -335,7 +339,8 @@ class Luban7(torch.nn.Module):
             frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
 
         span_ys = self.gen_span_ys(chars, labels)
-        score = frag_reprs @ self.label_weight + self.label_bias
+        score = self.clf(frag_reprs)
+        # score = frag_reprs @ self.label_weight + self.label_bias
         return score, span_ys
 
 

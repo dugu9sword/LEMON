@@ -164,7 +164,9 @@ def main():
                 # >>> Luban
                 if config.crf == 1.0:
                     luban_loss = 0
+                    aux_loss = 0
                     luban_log = "no luban"
+                    aux_log = "no aux"
                 else:
                     score, span_ys = luban7.get_span_score_tags(batch_data)
                     luban_loss = focal_loss(inputs=score,
@@ -173,16 +175,19 @@ def main():
                     score_probs = F.softmax(score, dim=1)
                     luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)
                     luban_log = "luban loss: {:.4f} precision: {:.4f}".format(luban_loss.item(), luban_precision)
+                    in_loss, between_loss = luban7.clf.aux_loss()
+                    aux_loss = config.in_cls_lamb * in_loss + config.between_cls_lamb * between_loss
+                    aux_log = "aux loss: {:.4f}".format(aux_loss.item())
                 # <<< Luban
 
-                loss = config.crf * crf_loss + (1 - config.crf) * luban_loss
+                loss = config.crf * crf_loss + (1 - config.crf) * (luban_loss + aux_loss)
 
                 progress.update(len(batch_data))
                 log(
                     "[{}: {}/{}] ".format(epoch_id, progress.complete_num, train_set.size),
                     "b: {:.2f} / c:{:.2f} / r: {:.2f} ".format(
                         progress.batch_time, progress.cost_time, progress.rest_time),
-                    crf_log, luban_log
+                    crf_log, luban_log, aux_log
                 )
 
                 # update gradients

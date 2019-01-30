@@ -60,6 +60,9 @@ class ProgramArgs(argparse.Namespace):
         # loss
         self.focal_gamma = 0
         self.focal_reduction = "mean"
+        self.k_center = 5
+        self.in_cls_lamb = 1e-3
+        self.between_cls_lamb = 1e-3
 
         # regularization
         self.drop_default = 0.1
