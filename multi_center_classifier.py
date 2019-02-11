@@ -35,8 +35,8 @@ class KCenterClassifier(torch.nn.Module):
 
     def __init__(self, num_classes, k_center, dim):
         super(KCenterClassifier, self).__init__()
-        self._num_classes = num_classes
-        self._k = k_center
+        self.num_classes = num_classes
+        self.k_center = k_center
         self._width = num_classes * k_center
 
         self.mask = torch.nn.Parameter(torch.tensor(aggregate_class_mask(num_classes, k_center)).float(),
@@ -45,7 +45,7 @@ class KCenterClassifier(torch.nn.Module):
                                                 requires_grad=False)
         self.between_class_mask = torch.nn.Parameter(torch.tensor(between_class_mask(num_classes, k_center)).float(),
                                                      requires_grad=False)
-        self.identity = torch.nn.Parameter(torch.eye(self._num_classes * self._k).float(),
+        self.identity = torch.nn.Parameter(torch.eye(self.num_classes * self.k_center).float(),
                                            requires_grad=False)
 
         self.label_weight = torch.nn.Parameter(torch.Tensor(num_classes * k_center, dim))
@@ -57,8 +57,12 @@ class KCenterClassifier(torch.nn.Module):
         # self.label_weight.data.uniform_(-std, std)
         # self.label_bias.data.uniform_(-std, std)
 
-    def forward(self, x, return_logits=True):
-        logits = (x @ self.label_weight.t() + self.label_bias) @ self.mask
+    def forward(self, x,
+                return_logits=True,
+                aggregate_class=True):
+        logits = (x @ self.label_weight.t() + self.label_bias)
+        if aggregate_class:
+            logits = logits @ self.mask
         if return_logits:
             return logits
         else:
@@ -76,33 +80,34 @@ class KCenterClassifier(torch.nn.Module):
 
 
 class DynamicCenterClassifier(torch.nn.Module):
-    def __init__(self, num_classes, max_k, dim):
+    def __init__(self, num_classes, k_center, dim):
         super(DynamicCenterClassifier, self).__init__()
-        self.label_weight = torch.nn.Parameter(torch.Tensor(num_classes * max_k, dim))
-        self.label_bias = torch.nn.Parameter(torch.Tensor(num_classes * max_k))
-        self._label_weight_3d_view = self.label_weight.view(num_classes, max_k, dim)
-        self._max_k = max_k
-        self._num_classes = num_classes
+        self.label_weight = torch.nn.Parameter(torch.Tensor(num_classes * k_center, dim))
+        self.label_bias = torch.nn.Parameter(torch.Tensor(num_classes * k_center))
+        self._label_weight_3d_view = self.label_weight.view(num_classes, k_center, dim)
+        self.k_center = k_center
+        self.num_classes = num_classes
         self._dim = dim
 
         self.num_ks = [1 for _ in range(num_classes)]
 
-        std = 1. / math.sqrt(self.label_weight.size(0))
-        self.label_weight.data.uniform_(-std, std)
-        self.label_bias.data.uniform_(-std, std)
+        reset_parameters(self.label_weight, self.label_bias)
+        # std = 1. / math.sqrt(self.label_weight.size(0))
+        # self.label_weight.data.uniform_(-std, std)
+        # self.label_bias.data.uniform_(-std, std)
 
     def add(self, cls_idx, x):
         self._label_weight_3d_view.data[cls_idx, self.num_ks[cls_idx]] = x.data[:]
         self.num_ks[cls_idx] = self.num_ks[cls_idx] + 1
 
     def is_full(self, class_idx):
-        return self.num_ks[class_idx] == self._max_k
+        return self.num_ks[class_idx] == self.k_center
 
     def forward(self, x, return_logits=True):
         # x: batch_size * dim
         batch_size = x.size(0)
         att_score = x @ self.label_weight.t() + self.label_bias
-        mask = torch.zeros(batch_size, self._num_classes, self._max_k,
+        mask = torch.zeros(batch_size, self.num_classes, self.k_center,
                            dtype=torch.uint8,
                            device=self.label_weight.device)
         for cls_idx, k in enumerate(self.num_ks):
@@ -113,6 +118,54 @@ class DynamicCenterClassifier(torch.nn.Module):
             return att_score
         else:
             return F.softmax(att_score, dim=1)
+
+
+############################################
+# Loss and utilities
+############################################
+
+def k_ctr_max_margin_loss(nk_logits, targets,
+                          n, k, m=1):
+    batch_size = nk_logits.size(0)
+    assert n * k == nk_logits.size(1)
+    batch_loss = torch.tensor(torch.zeros_like(targets, dtype=torch.float))
+
+    max_ctr = nk_logits.argmax(dim=1, keepdim=True)
+
+    # print(nk_logits[0].view(-1, 5))
+    # preds = max_ctr.view(-1).numpy().tolist()
+    # print(set(sorted(preds)))
+
+    for i in range(batch_size):
+        it_input = nk_logits[i]
+        it_target = targets[i]
+        it_pred_ctr = max_ctr[i][0]
+        it_pred_cls = it_pred_ctr // k
+
+        if it_pred_cls == targets[i]:
+            pass
+        else:
+            gold_cls_max_ctr_score = it_input[it_target * k: (it_target + 1) * k].max()
+            batch_loss[i] = m - gold_cls_max_ctr_score + it_input[it_pred_ctr]
+            # gold_cls_random_ctr_score = it_input[it_target * k: (it_target + 1) * k][np.random.randint(k)]
+            # batch_loss += m - gold_cls_random_ctr_score + it_input[it_pred_ctr]
+            # gold_cls_avg_ctr_score = it_input[it_target * k: (it_target + 1) * k].mean()
+            # batch_loss += m - gold_cls_avg_ctr_score + it_input[it_pred_ctr]
+
+    return batch_loss
+
+def add_max_loss_feature(clf:DynamicCenterClassifier,
+                         feature,
+                         target,
+                         batch_loss):
+    max_loss_idx = torch.argmax(batch_loss)
+    max_loss_cls = target[max_loss_idx]
+    if not clf.is_full(max_loss_cls):
+        print('*** Add a new feature to cls', max_loss_cls.item())
+        clf.add(max_loss_cls, feature[max_loss_idx])
+    else:
+        print('*** Full cls ', max_loss_cls.item())
+
 
 # dynamic_soft = DynamicCenterClassifier(5, 3, 100)
 # dynamic_soft.add(0, torch.randn(100))

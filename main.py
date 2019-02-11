@@ -169,7 +169,7 @@ def main():
                     aux_log = "no aux"
                 else:
                     score, span_ys = luban7.get_span_score_tags(batch_data)
-                    luban_loss = focal_loss(inputs=score,
+                    luban_loss = focal_loss(logits=score,
                                             targets=torch.tensor(span_ys, device=device),
                                             gamma=config.focal_gamma)
                     score_probs = F.softmax(score, dim=1)
