@@ -33,7 +33,7 @@ def reset_parameters(weight, bias):
 
 class KCenterClassifier(torch.nn.Module):
 
-    def __init__(self, num_classes, k_center, dim):
+    def __init__(self, num_classes, k_center, dim, aggregate=False):
         super(KCenterClassifier, self).__init__()
         self.num_classes = num_classes
         self.k_center = k_center
@@ -58,11 +58,9 @@ class KCenterClassifier(torch.nn.Module):
         # self.label_bias.data.uniform_(-std, std)
 
     def forward(self, x,
-                return_logits=True,
-                aggregate_class=True):
+                return_logits=True):
         logits = (x @ self.label_weight.t() + self.label_bias)
-        if aggregate_class:
-            logits = logits @ self.mask
+        logits = logits @ self.mask
         if return_logits:
             return logits
         else:
@@ -79,9 +77,9 @@ class KCenterClassifier(torch.nn.Module):
 # print(dynamic_soft.aux_loss())
 
 
-class DynamicCenterClassifier(torch.nn.Module):
+class WTFClassifier(torch.nn.Module):
     def __init__(self, num_classes, k_center, dim):
-        super(DynamicCenterClassifier, self).__init__()
+        super(WTFClassifier, self).__init__()
         self.label_weight = torch.nn.Parameter(torch.Tensor(num_classes * k_center, dim))
         self.label_bias = torch.nn.Parameter(torch.Tensor(num_classes * k_center))
         self._label_weight_3d_view = self.label_weight.view(num_classes, k_center, dim)
@@ -103,6 +101,12 @@ class DynamicCenterClassifier(torch.nn.Module):
     def is_full(self, class_idx):
         return self.num_ks[class_idx] == self.k_center
 
+    def extract_max_score(self, score):
+        score, _ = torch.max(score.view(-1,
+                                        self.num_classes,
+                                        self.k_center), dim=2)
+        return score
+
     def forward(self, x, return_logits=True):
         # x: batch_size * dim
         batch_size = x.size(0)
@@ -119,53 +123,47 @@ class DynamicCenterClassifier(torch.nn.Module):
         else:
             return F.softmax(att_score, dim=1)
 
+    def compute_loss(self, nk_logits, targets, m=1):
+        batch_size = nk_logits.size(0)
+        assert self.num_classes * self.k_center == nk_logits.size(1)
+        batch_loss = torch.zeros_like(targets, dtype=torch.float)
 
-############################################
-# Loss and utilities
-############################################
+        max_ctr = nk_logits.argmax(dim=1, keepdim=True)
 
-def k_ctr_max_margin_loss(nk_logits, targets,
-                          n, k, m=1):
-    batch_size = nk_logits.size(0)
-    assert n * k == nk_logits.size(1)
-    batch_loss = torch.tensor(torch.zeros_like(targets, dtype=torch.float))
+        # print(nk_logits[0].view(-1, 5))
+        # preds = max_ctr.view(-1).numpy().tolist()
+        # print(set(sorted(preds)))
 
-    max_ctr = nk_logits.argmax(dim=1, keepdim=True)
+        for i in range(batch_size):
+            it_input = nk_logits[i]
+            it_target = targets[i]
+            it_pred_ctr = max_ctr[i][0]
+            it_pred_cls = it_pred_ctr // self.k_center
 
-    # print(nk_logits[0].view(-1, 5))
-    # preds = max_ctr.view(-1).numpy().tolist()
-    # print(set(sorted(preds)))
+            if it_pred_cls == targets[i]:
+                pass
+            else:
+                gold_cls_max_ctr_score = it_input[it_target * self.k_center
+                                                  : (it_target + 1) * self.k_center].max()
+                batch_loss[i] = m - gold_cls_max_ctr_score + it_input[it_pred_ctr]
+                # gold_cls_random_ctr_score = it_input[it_target * k: (it_target + 1) * k][np.random.randint(k)]
+                # batch_loss += m - gold_cls_random_ctr_score + it_input[it_pred_ctr]
+                # gold_cls_avg_ctr_score = it_input[it_target * k: (it_target + 1) * k].mean()
+                # batch_loss += m - gold_cls_avg_ctr_score + it_input[it_pred_ctr]
 
-    for i in range(batch_size):
-        it_input = nk_logits[i]
-        it_target = targets[i]
-        it_pred_ctr = max_ctr[i][0]
-        it_pred_cls = it_pred_ctr // k
+        return batch_loss
 
-        if it_pred_cls == targets[i]:
-            pass
+    def add_max_loss_feature(self,
+                             feature,
+                             target,
+                             batch_loss):
+        max_loss_idx = torch.argmax(batch_loss)
+        max_loss_cls = target[max_loss_idx]
+        if not self.is_full(max_loss_cls):
+            print('*** Add a new feature to cls', max_loss_cls.item())
+            self.add(max_loss_cls, feature[max_loss_idx])
         else:
-            gold_cls_max_ctr_score = it_input[it_target * k: (it_target + 1) * k].max()
-            batch_loss[i] = m - gold_cls_max_ctr_score + it_input[it_pred_ctr]
-            # gold_cls_random_ctr_score = it_input[it_target * k: (it_target + 1) * k][np.random.randint(k)]
-            # batch_loss += m - gold_cls_random_ctr_score + it_input[it_pred_ctr]
-            # gold_cls_avg_ctr_score = it_input[it_target * k: (it_target + 1) * k].mean()
-            # batch_loss += m - gold_cls_avg_ctr_score + it_input[it_pred_ctr]
-
-    return batch_loss
-
-def add_max_loss_feature(clf:DynamicCenterClassifier,
-                         feature,
-                         target,
-                         batch_loss):
-    max_loss_idx = torch.argmax(batch_loss)
-    max_loss_cls = target[max_loss_idx]
-    if not clf.is_full(max_loss_cls):
-        print('*** Add a new feature to cls', max_loss_cls.item())
-        clf.add(max_loss_cls, feature[max_loss_idx])
-    else:
-        print('*** Full cls ', max_loss_cls.item())
-
+            print('*** Full cls ', max_loss_cls.item())
 
 # dynamic_soft = DynamicCenterClassifier(5, 3, 100)
 # dynamic_soft.add(0, torch.randn(100))

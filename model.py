@@ -13,7 +13,7 @@ from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from attention import MultiHeadAttention, gen_att_mask
 from torch_crf import CRF
 from program_args import config
-from multi_center_classifier import KCenterClassifier, DynamicCenterClassifier
+from multi_center_classifier import KCenterClassifier, WTFClassifier
 
 
 class Luban7(torch.nn.Module):
@@ -48,7 +48,7 @@ class Luban7(torch.nn.Module):
                           word_dict=self.char2idx,
                           cached_name="{}.{}.char".format(
                               config.char_emb_pretrain.split('/')[1],
-                              config.char_count_gt) if config.load_from_cache  == "on" else None
+                              config.char_count_gt) if config.load_from_cache == "on" else None
                           )
         if config.bichar_emb_size > 0 and config.bichar_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.bichar_embeds,
@@ -57,7 +57,7 @@ class Luban7(torch.nn.Module):
                           word_dict=self.bichar2idx,
                           cached_name="{}.{}.bichar".format(
                               config.bichar_emb_pretrain.split('/')[1],
-                              config.bichar_count_gt) if config.load_from_cache  == "on" else None
+                              config.bichar_count_gt) if config.load_from_cache == "on" else None
                           )
         self.embeds.show_mean_std()
 
@@ -174,7 +174,7 @@ class Luban7(torch.nn.Module):
                 config.lexicon_emb_pretrain,
                 norm=True,
                 cached_name="{}.lexicon".format(
-                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache  == "on" else None
+                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache == "on" else None
             )
             self.lexicon_attention = MultiHeadAttention(d_q=frag_dim,
                                                         d_k=50 + config.match_emb_size,
@@ -186,9 +186,16 @@ class Luban7(torch.nn.Module):
                                                         d_out=frag_dim)
             frag_dim = frag_dim * 2
 
-        self.clf = KCenterClassifier(num_classes=len(label2idx),
+        if config.loss_type == 'focal':
+            self.clf = KCenterClassifier(num_classes=len(label2idx),
+                                         k_center=config.k_center,
+                                         dim=frag_dim)
+        elif config.loss_type == "wtf":
+            self.clf = WTFClassifier(num_classes=len(label2idx),
                                      k_center=config.k_center,
                                      dim=frag_dim)
+        else:
+            raise Exception
         # self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         # self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
         #
@@ -267,7 +274,7 @@ class Luban7(torch.nn.Module):
         results = self.ner_crf.decode(scores, masks)
         return results
 
-    def get_span_score_tags(self, batch_data):
+    def gen_span_features_and_labels(self, batch_data):
         chars = group_fields(batch_data, keys='chars')
         text_lens = batch_lens(chars)
         labels = group_fields(batch_data, keys='labels')
@@ -339,9 +346,8 @@ class Luban7(torch.nn.Module):
             frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
 
         span_ys = self.gen_span_ys(chars, labels)
-        score = self.clf(frag_reprs)
         # score = frag_reprs @ self.label_weight + self.label_bias
-        return score, span_ys
+        return frag_reprs, span_ys
 
 
 @lru_cache(maxsize=None)

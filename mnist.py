@@ -5,22 +5,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
-from multi_center_classifier import KCenterClassifier, DynamicCenterClassifier, k_ctr_max_margin_loss, add_max_loss_feature
+from multi_center_classifier import KCenterClassifier, WTFClassifier
 from buff import focal_loss, flatten_lst
 import numpy as np
 
 
 class Net(nn.Module):
-    def __init__(self, k_ctr=5):
+    def __init__(self, k_ctr=1):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 20, 5, 1)
         self.conv2 = nn.Conv2d(20, 50, 5, 1)
         self.fc1 = nn.Linear(4 * 4 * 50, 500)
         self.fc2 = nn.Linear(500, 10)
         # self.clf = KCenterClassifier(num_classes=10, k_center=k_ctr, dim=10)
-        self.clf = DynamicCenterClassifier(num_classes=10,
-                                           k_center=3,
-                                           dim=10)
+        self.clf = WTFClassifier(num_classes=10,
+                                 k_center=k_ctr,
+                                 dim=10)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -33,6 +33,7 @@ class Net(nn.Module):
         return x
         # return self.clf(x, aggregate_class=False)
 
+
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -43,17 +44,15 @@ def train(args, model, device, train_loader, optimizer, epoch):
         # loss = F.nll_loss(output, target)
         # loss = focal_loss(inputs=output,
         #                   targets=target)
-        batch_loss = k_ctr_max_margin_loss(nk_logits=logits,
-                                     targets=target,
-                                     n=10,
-                                     k=model.clf.k_center,
-                                     m=1)
+
+        batch_loss = model.clf.compute_loss(nk_logits=logits,
+                                            targets=target,
+                                            m=1)
         loss = batch_loss.mean()
         if batch_idx % 50 == 0:
-            add_max_loss_feature(model.clf,
-                                 feat,
-                                 target,
-                                 batch_loss)
+            model.clf.add_max_loss_feature(feat,
+                                           target,
+                                           batch_loss)
         if loss > 0:
             loss.backward()
             optimizer.step()

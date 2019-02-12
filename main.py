@@ -11,6 +11,7 @@ from program_args import config
 from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
 import pdb
+from multi_center_classifier import WTFClassifier, KCenterClassifier
 
 device = allocate_cuda_device(0)
 
@@ -55,39 +56,40 @@ def main():
     lexicon2idx, idx2lexicon = load_vocab("{}/lexicon.vocab".format(vocab_folder))
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
-    train_set = auto_create(
-        "train_set.{}".format(config.use_data_set),
-        lambda: ConllDataSet(
-            data_path=used_data_set[0],
-            lexicon2idx=lexicon2idx,
-            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            ignore_pos_bmes=config.pos_bmes == 'off',
-            max_text_len=config.max_sentence_length,
-            max_span_len=config.max_span_length,
-            sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
-    dev_set = auto_create(
-        "dev_set.{}".format(config.use_data_set),
-        lambda: ConllDataSet(
-            data_path=used_data_set[1],
-            lexicon2idx=lexicon2idx,
-            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            # max_text_len=config.max_sentence_length,
-            # max_span_len=config.max_span_length,
-            ignore_pos_bmes=config.pos_bmes == 'off',
-            sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
-    test_set = auto_create(
-        "test_set.{}".format(config.use_data_set),
-        lambda: ConllDataSet(
-            data_path=used_data_set[2],
-            lexicon2idx=lexicon2idx,
-            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            # max_text_len=config.max_sentence_length,
-            # max_span_len=config.max_span_length,
-            ignore_pos_bmes=config.pos_bmes == 'off',
-            sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
+    with time_record("load dataset"):
+        train_set = auto_create(
+            "train_set.{}".format(config.use_data_set),
+            lambda: ConllDataSet(
+                data_path=used_data_set[0],
+                lexicon2idx=lexicon2idx,
+                char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+                pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+                ignore_pos_bmes=config.pos_bmes == 'off',
+                max_text_len=config.max_sentence_length,
+                max_span_len=config.max_span_length,
+                sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
+        dev_set = auto_create(
+            "dev_set.{}".format(config.use_data_set),
+            lambda: ConllDataSet(
+                data_path=used_data_set[1],
+                lexicon2idx=lexicon2idx,
+                char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+                pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+                # max_text_len=config.max_sentence_length,
+                # max_span_len=config.max_span_length,
+                ignore_pos_bmes=config.pos_bmes == 'off',
+                sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
+        test_set = auto_create(
+            "test_set.{}".format(config.use_data_set),
+            lambda: ConllDataSet(
+                data_path=used_data_set[2],
+                lexicon2idx=lexicon2idx,
+                char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+                pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+                # max_text_len=config.max_sentence_length,
+                # max_span_len=config.max_span_length,
+                ignore_pos_bmes=config.pos_bmes == 'off',
+                sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     longest_span_len = max(train_set.longest_span_len, dev_set.longest_span_len)
     longest_text_len = max(train_set.longest_text_len, dev_set.longest_text_len)
 
@@ -168,16 +170,39 @@ def main():
                     luban_log = "no luban"
                     aux_log = "no aux"
                 else:
-                    score, span_ys = luban7.get_span_score_tags(batch_data)
-                    luban_loss = focal_loss(logits=score,
-                                            targets=torch.tensor(span_ys, device=device),
-                                            gamma=config.focal_gamma)
+                    features, span_ys = luban7.gen_span_features_and_labels(batch_data)
+                    score = luban7.clf(features)
+                    targets = torch.tensor(span_ys, device=device)
+                    if isinstance(luban7.clf, KCenterClassifier):
+                        luban_batch_loss = focal_loss(logits=score,
+                                                      targets=targets,
+                                                      gamma=config.focal_gamma,
+                                                      reduction='none')
+                    elif isinstance(luban7.clf, WTFClassifier):
+                        luban_batch_loss = luban7.clf.compute_loss(nk_logits=score,
+                                                                   targets=targets,
+                                                                   m=config.margin)
+                        score = luban7.clf.extract_max_score(score)
+                        if iter_id % 30 == 0:
+                            luban7.clf.add_max_loss_feature(feature=features,
+                                                            target=targets,
+                                                            batch_loss=luban_batch_loss)
+                    else:
+                        raise Exception
+
                     score_probs = F.softmax(score, dim=1)
                     luban_precision = accuracy(score_probs.detach().cpu().numpy(), span_ys)
+
+                    luban_loss = luban_batch_loss.mean()
+
                     luban_log = "luban loss: {:.4f} precision: {:.4f}".format(luban_loss.item(), luban_precision)
-                    in_loss, between_loss = luban7.clf.aux_loss()
-                    aux_loss = config.in_cls_lamb * in_loss + config.between_cls_lamb * between_loss
-                    aux_log = "aux loss: {:.4f}".format(aux_loss.item())
+                    if hasattr(luban7.clf, "aux_loss"):
+                        in_loss, between_loss = luban7.clf.aux_loss()
+                        aux_loss = config.in_cls_lamb * in_loss + config.between_cls_lamb * between_loss
+                        aux_log = "aux loss: {:.4f}".format(aux_loss.item())
+                    else:
+                        aux_loss = 0.
+                        aux_log = "no aux"
                 # <<< Luban
 
                 loss = config.crf * crf_loss + (1 - config.crf) * (luban_loss + aux_loss)
@@ -239,8 +264,14 @@ def main():
 
                     # >>> Luban
                     if config.crf != 1.0:
-                        score, span_ys = luban7.get_span_score_tags(batch_data)
-                        score_probs = F.softmax(score, dim=1)
+                        features, span_ys = luban7.gen_span_features_and_labels(batch_data)
+                        score = luban7.clf(features)
+                        if config.loss_type == "focal":
+                            score_probs = F.softmax(score, dim=1)
+                        elif config.loss_type == "wtf":
+                            score_probs = luban7.clf.extract_max_score(score)
+                        else:
+                            raise Exception
 
                         pred = cast_list(torch.argmax(score, 1))
 

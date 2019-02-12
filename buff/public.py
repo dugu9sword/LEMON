@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import numpy as np
 import re
 import pickle
+import json
 import random
 import argparse
 from typing import List, Dict, NamedTuple, Union
@@ -42,18 +43,21 @@ def save_var(variable, name, path=None):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
     pickle.dump(variable, open("{}/{}.pkl".format(path, name), "wb"))
+    # json.dump(variable, open("{}/{}.json".format(path, name), "wb"))
 
 
 def load_var(name, path=None):
     if path is None:
         path = __saved_path__
     return pickle.load(open("{}/{}.pkl".format(path, name), "rb"))
+    # return json.load(open("{}/{}.json".format(path, name), "rb"))
 
 
 def exist_var(name, path=None):
     if path is None:
         path = __saved_path__
     return os.path.exists("{}/{}.pkl".format(path, name))
+    # return os.path.exists("{}/{}.json".format(path, name))
 
 
 def auto_create(name, func, cache=False, path=__saved_path__):
@@ -66,11 +70,11 @@ def auto_create(name, func, cache=False, path=__saved_path__):
 
 
 @contextmanager
-def time_record():
+def time_record(some_str=""):
     start = time.time()
     yield
     end = time.time()
-    print("cost {:.3} seconds".format(end - start))
+    print(some_str, "cost {:.3} seconds".format(end - start))
 
 
 class ProgressManager:

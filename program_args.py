@@ -58,11 +58,15 @@ class ProgramArgs(argparse.Namespace):
         self.lexicon_emb_dim = 50
 
         # loss
+        self.loss_type = "wtf"
+
         self.focal_gamma = 0
         self.focal_reduction = "mean"
         self.k_center = 5
         self.in_cls_lamb = 1e-3
         self.between_cls_lamb = 1e-3
+
+        self.margin = 1.0
 
         # regularization
         self.drop_default = 0.1
