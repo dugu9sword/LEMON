@@ -33,7 +33,8 @@ def enum_span_by_length(text_len):
 def main():
     log_config("main.txt", "cf")
     used_data_set = usable_data_sets[config.use_data_set]
-    vocab_folder = "dataset/ontonotes4/vocab.{}.{}.{}".format(
+    vocab_folder = "dataset/ontonotes4/{}.vocab.{}.{}.{}".format(
+        config.use_data_set,
         config.char_count_gt, config.bichar_count_gt, config.pos_bmes)
     gen_vocab(data_path=used_data_set[0],
               out_folder=vocab_folder,
