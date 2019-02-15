@@ -41,12 +41,13 @@ def permute_cols(*files, pidx, out_file):
 #              out_file="../dataset/ontonotes4/train.pos.bmes")
 
 
-name = 'train'
+name = 'test'
+pred = 'nlpir'
 permute_cols("../dataset/ontonotes4/{}.mix.bmes".format(name),
-             "../dataset/ontonotes4/{}.seg.bmes.pred".format(name),
-             "../dataset/ontonotes4/{}.pos.bmes.pred".format(name),
+             "../dataset/ontonotes4/{}.seg.bmes.{}".format(name, pred),
+             "../dataset/ontonotes4/{}.pos.bmes.{}".format(name, pred),
              pidx=((0, 0), (1, 1), (2, 1), (0, 3)),
-             out_file="../dataset/ontonotes4/{}.mix.allpred.bmes".format(name))
+             out_file="../dataset/ontonotes4/{}.mix.bmes.{}".format(name, pred))
 
 def check_seg(file1, file2):
     content_1 = load_sentences(file1)

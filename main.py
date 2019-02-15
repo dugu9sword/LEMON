@@ -101,20 +101,36 @@ def main():
                     longest_text_len=longest_text_len,
                     lexicon2idx=lexicon2idx,
                     match2idx=match2idx).to(device)
-    if config.use_sparse_embed == "on":
-        params = list(luban7.named_parameters())
-        dense_params = []
-        sparse_params = []
-        for pid in range(len(params)):
-            if "embeds" in params[pid][0]:
-                sparse_params.append(params[pid][1])
-            else:
-                dense_params.append(params[pid][1])
-        opt = torch.optim.Adam(dense_params, lr=0.001, weight_decay=config.weight_decay)
-        embed_opt = torch.optim.SparseAdam(sparse_params, lr=0.001)
+
+    # set optimizer
+    optimizers = []
+    lr_scls = []
+    if config.opt_type == "adam":
+        if config.use_sparse_embed == "on":
+            params = list(luban7.named_parameters())
+            dense_params, sparse_params = [], []
+            for pid in range(len(params)):
+                if "embeds" in params[pid][0]:
+                    sparse_params.append(params[pid][1])
+                else:
+                    dense_params.append(params[pid][1])
+            optimizers.append(torch.optim.Adam(dense_params, lr=config.lr, weight_decay=config.weight_decay))
+            optimizers.append(torch.optim.SparseAdam(sparse_params, lr=config.lr))
+        else:
+            optimizers.append(torch.optim.Adam(luban7.parameters(), lr=config.lr, weight_decay=config.weight_decay))
+    elif config.opt_type == "sgd":
+        optimizers.append(torch.optim.SGD(luban7.parameters(), lr=config.lr, weight_decay=config.weight_decay,
+                                          momentum=config.momentum))
+    elif config.opt_type == "adadelta":
+        optimizers.append(torch.optim.Adadelta(luban7.parameters(), lr=config.lr,
+                                               weight_decay=config.weight_decay))
     else:
-        opt = torch.optim.Adam(luban7.parameters(), lr=0.001, weight_decay=config.weight_decay)
-    # lr_scl = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[20, 25], gamma=0.5)
+        raise Exception
+    for opt in optimizers:
+        lr_scls.append(torch.optim.lr_scheduler.MultiStepLR(
+            opt, milestones=list(range(config.lr_epoch, config.epoch_max)),
+            gamma=config.lr_gamma))
+
     manager = ModelManager(luban7, config.model_name, init_ckpt=config.model_ckpt) \
         if config.model_name != "off" else None
 
@@ -123,7 +139,8 @@ def main():
         """
         Epoch Level Pre-processing
         """
-        # lr_scl.step(epoch_id)
+        for lr_scl in lr_scls:
+            lr_scl.step()
         epoch_id += 1
         if epoch_id == config.epoch_max:
             break
@@ -187,17 +204,15 @@ def main():
                 )
 
                 # update gradients
-                opt.zero_grad()
-                if config.use_sparse_embed == "on":
-                    embed_opt.zero_grad()
+                for opt in optimizers:
+                    opt.zero_grad()
                 loss.backward()
                 if config.check_nan == "on":
                     if torch.isnan(luban7.embeds.char_embeds.weight.grad.sum()):
                         pdb.set_trace()
                 clip_grad_norm_(luban7.parameters(), 5)
-                opt.step()
-                if config.use_sparse_embed == "on":
-                    embed_opt.step()
+                for opt in optimizers:
+                    opt.step()
 
             log("<<< epoch {} train".format(epoch_id))
 

@@ -14,6 +14,12 @@ class ProgramArgs(argparse.Namespace):
 
         self.crf = 0.0
 
+        self.opt_type = "sgd"
+        self.lr = 0.001
+        self.momentum = 0.
+        self.lr_epoch = 20
+        self.lr_gamma = 0.95
+
         # embedding settings
         self.char_emb_size = 50
         self.bichar_emb_size = 0
@@ -25,8 +31,8 @@ class ProgramArgs(argparse.Namespace):
         # self.char_emb_pretrain = "word2vec/fasttext/wiki.zh.vec"
         # self.char_emb_pretrain = "off"
 
-        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
         self.bichar_emb_pretrain = 'off'
+        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
 
         # transformer config
         self.tfer_num_layer = 2
@@ -76,7 +82,7 @@ class ProgramArgs(argparse.Namespace):
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "full"
+        self.use_data_set = "thu"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"
