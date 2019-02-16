@@ -49,10 +49,11 @@ def load_sentences(file_path, sep=r"\s+"):
     return ret
 
 
+def pair(a, b):
+    return a, b
+
+
 FragIdx = NamedTuple("FragIdx", [("bid", int), ("eid", int)])
-MatchedLexicon = NamedTuple("MatchedLexicon", [("lex_idx", int), ("match_type", int)])
-FragMatches = NamedTuple("FragMatches", [("frag", FragIdx), ("matches", List[MatchedLexicon])])
-AllFragMatches = List[FragMatches]
 
 SpanLabel = NamedTuple("SpanLabel", [("b", int),
                                      ("e", int),
@@ -66,7 +67,7 @@ Datum = NamedTuple("Datum", [("chars", List[int]),
                              ("segs", List[int]),
                              ("poss", List[int]),
                              ("ners", List[int]),
-                             ("lexmatches", AllFragMatches),
+                             ("lexmatches", object),
                              ("labels", List[SpanLabel])])
 
 
@@ -166,12 +167,21 @@ def gen_vocab(data_path, out_folder,
 
 
 # gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
-match2idx = {"full_match": 0,
-             "prefix_match": 1,
-             "suffix_match": 2,
-             "inter_match": 3,
-             "no_match": 4}
-idx2match = {v: k for k, v in match2idx.items()}
+match2idx_naive = {"full_match": 0,
+                   "prefix_match": 1,
+                   "suffix_match": 2,
+                   "inter_match": 3,
+                   "no_match": 4}
+idx2match_naive = {v: k for k, v in match2idx_naive.items()}
+
+match2idx_presuff = {
+    "full_match": 0,
+    "over_match": 1,
+    "concat_match": 2,
+    "under_match": 3
+}
+idx2match_presuff = {v: k for k, v in match2idx_presuff.items()}
+
 
 
 class ConllDataSet(DataSet):
@@ -241,16 +251,27 @@ class ConllDataSet(DataSet):
                         self.__longest_span_len = max(self.__longest_span_len, label_e - label_b + 1)
 
             if len(chars) < max_text_len:
-                all_frag_matches = match_lexicon_dict(group_fields(sen, indices=0),
-                                                      lexicon2idx=lexicon2idx,
-                                                      max_match_num=max_match_num)
-                # for ele in all_frag_matches:
-                #     print("".join(group_fields(sen, indices=0)[ele.frag.bid: ele.frag.eid + 1]))
-                #     for word_idx, match_type in ele.matches:
-                #         print(self.idx2word[word_idx])
+                if config.match_mode == "naive":
+                    lexmatches = match_lex_naive(group_fields(sen, indices=0),
+                                                 lexicon2idx=lexicon2idx,
+                                                 max_match_num=max_match_num)
+                    # for ele in all_frag_matches:
+                    #     print("".join(group_fields(sen, indices=0)[ele.frag.bid: ele.frag.eid + 1]))
+                    #     for word_idx, match_type in ele.matches:
+                    #         print(self.idx2word[word_idx])
+                elif config.match_mode == "presuff":
+                    lexmatches = match_lex_presuff(group_fields(sen, indices=0),
+                                                   lexicon2idx=lexicon2idx)
+                    # for ele in lexmatches:
+                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]),
+                    #           self.idx2word[ele[1]], self.idx2word[ele[2]],
+                    #           idx2match_presuff[ele[3]])
+                else:
+                    raise Exception
+
                 self.data.append(Datum(chars=chars, bichars=bichars, segs=segs,
                                        poss=poss, ners=ners, labels=labels,
-                                       lexmatches=all_frag_matches))
+                                       lexmatches=lexmatches))
                 self.__longest_text_len = max(self.__longest_text_len, len(chars))
 
         if sort_by_length:
@@ -281,9 +302,9 @@ def fragments(sentence_len, max_span_len) -> List[FragIdx]:
     return ret
 
 
-def match_lexicon_dict(chars, lexicon2idx, max_match_num) -> AllFragMatches:
+def match_lex_naive(chars, lexicon2idx, max_match_num):
     mapping_dict = {}  # type: Dict[FragIdx, int]
-    ret = []  # type: AllFragMatches
+    ret = []
     length = len(chars)
     # print(self.__max_span_len)
     # print(fragments(length, self.__max_span_len))
@@ -299,22 +320,70 @@ def match_lexicon_dict(chars, lexicon2idx, max_match_num) -> AllFragMatches:
                 if FragIdx(sub_i, sub_j) in mapping_dict:
                     if sub_i == i:
                         if sub_j == j:
-                            m_idx = match2idx['full_match']
+                            m_idx = match2idx_naive['full_match']
                         else:
-                            m_idx = match2idx['prefix_match']
+                            m_idx = match2idx_naive['prefix_match']
                     else:
                         if sub_j == j:
-                            m_idx = match2idx['suffix_match']
+                            m_idx = match2idx_naive['suffix_match']
                         else:
-                            m_idx = match2idx['inter_match']
-                    matched_lexicons.append(MatchedLexicon(lex_idx=mapping_dict[FragIdx(sub_i, sub_j)],
-                                                           match_type=m_idx))
+                            m_idx = match2idx_naive['inter_match']
+                    matched_lexicons.append(
+                        pair(mapping_dict[FragIdx(sub_i, sub_j)], m_idx)
+                    )
         matched_lexicons.sort(key=lambda x: x[1])
         matched_lexicons = matched_lexicons[:max_match_num]
         if len(matched_lexicons) == 0:
-            matched_lexicons.append(MatchedLexicon(lex_idx=lexicon2idx[Sp.oov],
-                                                   match_type=match2idx['no_match']))
-        ret.append(FragMatches(FragIdx(i, j), matched_lexicons))
+            matched_lexicons.append(
+                pair(lexicon2idx[Sp.oov], match2idx_naive['no_match'])
+            )
+        ret.append(
+            (pair(i, j), matched_lexicons)
+        )
+    return ret
+
+
+def upto(a, b) -> range:
+    return range(a, b + 1)
+
+
+def downto(b, a) -> range:
+    return range(b, a - 1, -1)
+
+
+def match_lex_presuff(chars, lexicon2idx):
+    mapping_dict = {}  # type: Dict[FragIdx, int]
+    ret = []
+    length = len(chars)
+    # print(self.__max_span_len)
+    # print(fragments(length, self.__max_span_len))
+    for i, j in fragments(length, config.max_span_length):
+        lexicon = "".join(chars[i:j + 1])
+        if lexicon in lexicon2idx:
+            mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
+    for i, j in fragments(length, config.max_span_length):
+        pre_match, suff_match = lexicon2idx[Sp.oov], lexicon2idx[Sp.oov]
+        for pre_j in downto(j, i):
+            if FragIdx(i, pre_j) in mapping_dict:
+                pre_match = mapping_dict[FragIdx(i, pre_j)]
+                break
+        for suff_i in upto(i, j):
+            if FragIdx(suff_i, j) in mapping_dict:
+                suff_match = mapping_dict[FragIdx(suff_i, j)]
+                break
+        if pre_j == j:
+            match_type = match2idx_presuff["full_match"]
+        elif pre_j + 1 > suff_i:
+            match_type = match2idx_presuff["over_match"]
+        elif pre_j + 1 == suff_i:
+            match_type = match2idx_presuff["concat_match"]
+        elif pre_j + 1 < suff_i:
+            match_type = match2idx_presuff["under_match"]
+        else:
+            raise Exception
+        ret.append(
+            (pair(i, j), pre_match, suff_match, match_type)
+        )
     return ret
 
 

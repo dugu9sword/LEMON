@@ -14,7 +14,7 @@ class ProgramArgs(argparse.Namespace):
 
         self.crf = 0.0
 
-        self.opt_type = "sgd"
+        self.opt_type = "adam"
         self.lr = 0.001
         self.momentum = 0.
         self.lr_epoch = 20
@@ -58,7 +58,7 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.use_lexicon = "off"
+        self.match_mode = "presuff"
         self.match_emb_size = 25
         self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
         self.lexicon_emb_dim = 50

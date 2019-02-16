@@ -6,7 +6,7 @@ import torch
 from buff import focal_loss, group_fields
 import torch.nn.functional as F
 from functools import lru_cache
-from dataset import ConllDataSet, gen_lexicon_vocab, load_vocab, gen_vocab, usable_data_sets, match2idx
+from dataset import ConllDataSet, gen_lexicon_vocab, load_vocab, gen_vocab, usable_data_sets, match2idx_naive
 from program_args import config
 from model import Luban7
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
@@ -57,7 +57,7 @@ def main():
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
-        "train_set.{}".format(config.use_data_set),
+        "train_set.{}.{}".format(config.use_data_set, config.match_mode),
         lambda: ConllDataSet(
             data_path=used_data_set[0],
             lexicon2idx=lexicon2idx,
@@ -68,7 +68,7 @@ def main():
             max_span_len=config.max_span_length,
             sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
     dev_set = auto_create(
-        "dev_set.{}".format(config.use_data_set),
+        "dev_set.{}.{}".format(config.use_data_set, config.match_mode),
         lambda: ConllDataSet(
             data_path=used_data_set[1],
             lexicon2idx=lexicon2idx,
@@ -79,7 +79,7 @@ def main():
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     test_set = auto_create(
-        "test_set.{}".format(config.use_data_set),
+        "test_set.{}.{}".format(config.use_data_set, config.match_mode),
         lambda: ConllDataSet(
             data_path=used_data_set[2],
             lexicon2idx=lexicon2idx,
@@ -99,8 +99,7 @@ def main():
                     ner2idx=ner2idx,
                     label2idx=label2idx,
                     longest_text_len=longest_text_len,
-                    lexicon2idx=lexicon2idx,
-                    match2idx=match2idx).to(device)
+                    lexicon2idx=lexicon2idx).to(device)
 
     # set optimizer
     optimizers = []
@@ -145,7 +144,7 @@ def main():
         if epoch_id == config.epoch_max:
             break
         # luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
-        if config.use_lexicon == 'on':
+        if config.match_mode != 'off':
             for param in luban7.lexicon_embeds.parameters():
                 param.requires_grad = epoch_id > config.epoch_fix_lexicon_emb
         for param in luban7.embeds.parameters():

@@ -8,7 +8,7 @@ from context_enumerator import ContextEnumerator
 from seq_encoder import RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
-from dataset import Sp, AllFragMatches
+from dataset import Sp, match2idx_naive, match2idx_presuff
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from attention import MultiHeadAttention, gen_att_mask
 from torch_crf import CRF
@@ -19,7 +19,7 @@ class Luban7(torch.nn.Module):
 
     def __init__(self,
                  char2idx, bichar2idx, seg2idx, pos2idx, ner2idx,
-                 lexicon2idx, match2idx,
+                 lexicon2idx,
                  label2idx,
                  longest_text_len,
                  ):
@@ -47,7 +47,7 @@ class Luban7(torch.nn.Module):
                           word_dict=self.char2idx,
                           cached_name="{}.{}.char".format(
                               config.char_emb_pretrain.split('/')[1],
-                              config.char_count_gt) if config.load_from_cache  == "on" else None
+                              config.char_count_gt) if config.load_from_cache == "on" else None
                           )
         if config.bichar_emb_size > 0 and config.bichar_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.bichar_embeds,
@@ -56,7 +56,7 @@ class Luban7(torch.nn.Module):
                           word_dict=self.bichar2idx,
                           cached_name="{}.{}.bichar".format(
                               config.bichar_emb_pretrain.split('/')[1],
-                              config.bichar_count_gt) if config.load_from_cache  == "on" else None
+                              config.bichar_count_gt) if config.load_from_cache == "on" else None
                           )
         self.embeds.show_mean_std()
 
@@ -160,21 +160,22 @@ class Luban7(torch.nn.Module):
         ])
 
         """ Lexicon Embedding """
-        if config.use_lexicon == "on":
+        if config.match_mode != "off":
             self.lexicon_embeds = torch.nn.Embedding(len(lexicon2idx),
                                                      config.lexicon_emb_dim,
                                                      sparse=config.use_sparse_embed == "on")
-            self.match_embeds = torch.nn.Embedding(len(match2idx),
-                                                   config.match_emb_size,
-                                                   sparse=config.use_sparse_embed == "on")
             load_word2vec(
                 self.lexicon_embeds,
                 lexicon2idx,
                 config.lexicon_emb_pretrain,
                 norm=True,
                 cached_name="{}.lexicon".format(
-                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache  == "on" else None
+                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache == "on" else None
             )
+        if config.match_mode == "naive":
+            self.match_embeds = torch.nn.Embedding(len(match2idx_naive),
+                                                   config.match_emb_size,
+                                                   sparse=config.use_sparse_embed == "on")
             self.lexicon_attention = MultiHeadAttention(d_q=frag_dim,
                                                         d_k=50 + config.match_emb_size,
                                                         d_v=50 + config.match_emb_size,
@@ -184,6 +185,13 @@ class Luban7(torch.nn.Module):
                                                         dropout=config.drop_default,
                                                         d_out=frag_dim)
             frag_dim = frag_dim * 2
+        elif config.match_mode == "presuff":
+            self.match_embeds = torch.nn.Embedding(len(match2idx_presuff),
+                                                   config.match_emb_size,
+                                                   sparse=config.use_sparse_embed == "on")
+            frag_dim = frag_dim + config.lexicon_emb_dim * 2 + config.match_emb_size
+        else:
+            raise Exception
 
         self.label_weight = torch.nn.Parameter(torch.Tensor(frag_dim, len(label2idx)))
         self.label_bias = torch.nn.Parameter(torch.Tensor(len(label2idx)))
@@ -310,9 +318,9 @@ class Luban7(torch.nn.Module):
         else:
             raise Exception
 
-        if config.use_lexicon == "on":
-            lexmatches = group_fields(batch_data, keys='lexmatches')  # type: AllFragMatches
-            lexmatches = [item.matches for sublist in lexmatches for item in sublist]
+        if config.match_mode == "naive":
+            lexmatches = group_fields(batch_data, keys='lexmatches')
+            lexmatches = [item[1] for sublist in lexmatches for item in sublist]
             assert len(lexmatches) == frag_reprs.size(0)
             frag_match_lexicons, frag_match_types = [], []
             for it_match in lexmatches:
@@ -320,8 +328,8 @@ class Luban7(torch.nn.Module):
                     frag_match_lexicons.append([])
                     frag_match_types.append([])
                 else:
-                    frag_match_lexicons.append(group_fields(it_match, keys="lex_idx"))
-                    frag_match_types.append(group_fields(it_match, keys="match_type"))
+                    frag_match_lexicons.append(group_fields(it_match, indices=0))
+                    frag_match_types.append(group_fields(it_match, indices=1))
 
             mask = gen_att_mask(batch_lens(frag_match_lexicons), 8, 1).to(self.device)
             frag_match_lexicons = batch_pad(frag_match_lexicons, pad_len=8)
@@ -333,6 +341,18 @@ class Luban7(torch.nn.Module):
             memory = torch.cat([mem_lexicon, mem_match], dim=2)
             att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
             frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
+        elif config.match_mode == "presuff":
+            lexmatches = group_fields(batch_data, keys='lexmatches')
+            pre_match_idx = [item[1] for sublist in lexmatches for item in sublist]
+            suff_match_idx = [item[2] for sublist in lexmatches for item in sublist]
+            match_type_idx = [item[3] for sublist in lexmatches for item in sublist]
+            assert len(pre_match_idx) == len(suff_match_idx) == len(match_type_idx) == frag_reprs.size(0)
+            pre_match_lex = self.lexicon_embeds(torch.tensor(pre_match_idx, dtype=torch.long, device=self.device))
+            suff_match_lex = self.lexicon_embeds(torch.tensor(suff_match_idx, dtype=torch.long, device=self.device))
+            match_type = self.match_embeds(torch.tensor(match_type_idx, dtype=torch.long, device=self.device))
+            frag_reprs = torch.cat([frag_reprs, pre_match_lex, suff_match_lex, match_type], dim=1)
+        else:
+            raise Exception
 
         span_ys = self.gen_span_ys(chars, labels)
         score = frag_reprs @ self.label_weight + self.label_bias

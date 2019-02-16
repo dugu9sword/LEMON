@@ -58,19 +58,24 @@ def exist_var(name, path=None):
 
 def auto_create(name, func, cache=False, path=__saved_path__):
     if cache and exist_var(name, path):
-        obj = load_var(name, path)
+        with time_record("*** load {} from cache".format(name)):
+            obj = load_var(name, path)
     else:
-        obj = func()
-        save_var(obj, name, path)
+        with time_record("*** create {} and save to cache".format(name)):
+            obj = func()
+            save_var(obj, name, path)
     return obj
 
 
 @contextmanager
-def time_record():
+def time_record(sth=None):
     start = time.time()
     yield
     end = time.time()
-    print("cost {:.3} seconds".format(end - start))
+    if sth:
+        print(sth, "cost {:.3} seconds".format(end - start))
+    else:
+        print("cost {:.3} seconds".format(end - start))
 
 
 class ProgressManager:
