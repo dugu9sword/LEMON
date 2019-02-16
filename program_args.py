@@ -50,7 +50,7 @@ class ProgramArgs(argparse.Namespace):
 
         # fragment attention
         self.frag_att_type = 'off'
-        self.frag_att_head = 1
+        self.frag_att_head = 2
 
         # context encoder
         self.ctx_type = 'off'
@@ -58,7 +58,8 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.match_mode = "presuff"
+        self.match_mode = "mix"
+        self.match_head = 2
         self.match_emb_size = 25
         self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
         self.lexicon_emb_dim = 50

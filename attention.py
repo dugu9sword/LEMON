@@ -4,21 +4,21 @@ import torch.nn.functional as F
 import torch
 
 
-def gen_mask_by_len(lens, max_len=-1, pad_zero=True, last_dim=0):
+def gen_mask_by_len(lens, max_len=-1, pad_zero=True, last_dim=0, device=None):
     if max_len == -1:
         max_len = max(lens)
     if pad_zero:
-        mask = torch.tril(torch.ones(max_len, max_len))
+        mask = torch.tril(torch.ones(max_len, max_len, device=device))
     else:
-        mask = torch.triu(torch.ones(max_len, max_len), diagonal=1)
-    mask = mask.index_select(0, torch.tensor(lens) - 1).byte()
+        mask = torch.triu(torch.ones(max_len, max_len, device=device), diagonal=1)
+    mask = mask.index_select(0, torch.tensor(lens, device=device) - 1).byte()
     if last_dim > 0:
         mask = mask.unsqueeze(2).repeat(1, 1, last_dim)
     return mask
 
 
-def gen_att_mask(k_lens, max_k_len, max_q_len):
-    mask = gen_mask_by_len(k_lens, max_len=max_k_len, pad_zero=False, last_dim=0)
+def gen_att_mask(k_lens, max_k_len, max_q_len, device=None):
+    mask = gen_mask_by_len(k_lens, max_len=max_k_len, pad_zero=False, last_dim=0, device=device)
     mask = mask.unsqueeze(1).expand(-1, max_q_len, -1)
     return mask
 

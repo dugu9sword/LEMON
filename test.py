@@ -35,16 +35,30 @@ label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
 lexicon2idx, idx2lexicon = load_vocab("{}/lexicon.vocab".format(vocab_folder))
 
 with time_record():
-    dev_set = auto_create(
-        "dev_set.{}".format(config.use_data_set),
-        lambda: ConllDataSet(
-            data_path=used_data_set[1],
-            lexicon2idx=lexicon2idx,
-            char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
-            pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            # max_text_len=config.max_sentence_length,
-            # max_span_len=config.max_span_length,
-            ignore_pos_bmes=config.pos_bmes == 'off',
-            sort_by_length=False), cache=config.load_from_cache == "on")
+    ConllDataSet(
+        data_path=used_data_set[1],
+        lexicon2idx=lexicon2idx,
+        char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+        pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+        # max_text_len=config.max_sentence_length,
+        # max_span_len=config.max_span_length,
+        ignore_pos_bmes=config.pos_bmes == 'off',
+        sort_by_length=False)
+    # dev_set = auto_create(
+    #     "dev_set.{}.{}".format(config.use_data_set, config.match_mode),
+    #     lambda: ConllDataSet(
+    #         data_path=used_data_set[1],
+    #         lexicon2idx=lexicon2idx,
+    #         char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
+    #         pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
+    #         # max_text_len=config.max_sentence_length,
+    #         # max_span_len=config.max_span_length,
+    #         ignore_pos_bmes=config.pos_bmes == 'off',
+    #         sort_by_length=False), cache=config.load_from_cache == "on") # type: ConllDataSet
 
+    # lexmatches = dev_set.data[0].lexmatches
+    # for ele in lexmatches:
+    #     print("".join(dev_set.data[0].chars[ele[0][0]: ele[0][1] + 1]))
+    #     for word_idx, match_type in ele[1]:
+    #         print(dev_set.idx2word[word_idx])
 pass

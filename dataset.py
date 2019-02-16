@@ -76,6 +76,7 @@ class Sp:
     oov = "<oov>"
     sos = "<sos>"
     eos = "<eos>"
+    non = "<non>"
 
 
 def load_vocab(vocab_path):
@@ -166,7 +167,8 @@ def gen_vocab(data_path, out_folder,
         f_out.close()
 
 
-# gen_vocab("dataset/ontonotes4/train.mix.bmes", out_folder="dataset/ontonotes4/vocab")
+""" Match dict """
+max_match_num = 8
 match2idx_naive = {"full_match": 0,
                    "prefix_match": 1,
                    "suffix_match": 2,
@@ -182,6 +184,18 @@ match2idx_presuff = {
 }
 idx2match_presuff = {v: k for k, v in match2idx_presuff.items()}
 
+match2idx_mix = {
+    "full_match": 0,
+    "pre_1": 1,
+    "pre_2": 2,
+    "pre_3": 3,
+    "suff_1": 4,
+    "suff_2": 5,
+    "suff_3": 6,
+    "inter_match": 7,
+    "no_match": 8
+}
+idx2match_mix = {v: k for k, v in match2idx_mix.items()}
 
 
 class ConllDataSet(DataSet):
@@ -192,7 +206,6 @@ class ConllDataSet(DataSet):
                  ignore_pos_bmes=False,
                  max_text_len=19260817,
                  max_span_len=19260817,
-                 max_match_num=8,
                  sort_by_length=False):
         super(ConllDataSet, self).__init__()
         self.word2idx = lexicon2idx
@@ -253,12 +266,11 @@ class ConllDataSet(DataSet):
             if len(chars) < max_text_len:
                 if config.match_mode == "naive":
                     lexmatches = match_lex_naive(group_fields(sen, indices=0),
-                                                 lexicon2idx=lexicon2idx,
-                                                 max_match_num=max_match_num)
-                    # for ele in all_frag_matches:
-                    #     print("".join(group_fields(sen, indices=0)[ele.frag.bid: ele.frag.eid + 1]))
-                    #     for word_idx, match_type in ele.matches:
-                    #         print(self.idx2word[word_idx])
+                                                 lexicon2idx=lexicon2idx)
+                    # for ele in lexmatches:
+                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1]+ 1]))
+                    #     for word_idx, match_type in ele[1]:
+                    #         print(">>\t" ,self.idx2word[word_idx], idx2match_naive[match_type])
                 elif config.match_mode == "presuff":
                     lexmatches = match_lex_presuff(group_fields(sen, indices=0),
                                                    lexicon2idx=lexicon2idx)
@@ -266,6 +278,13 @@ class ConllDataSet(DataSet):
                     #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]),
                     #           self.idx2word[ele[1]], self.idx2word[ele[2]],
                     #           idx2match_presuff[ele[3]])
+                elif config.match_mode == "mix":
+                    lexmatches = match_lex_mix(group_fields(sen, indices=0),
+                                               lexicon2idx=lexicon2idx)
+                    # for ele in lexmatches:
+                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]))
+                    #     for word_idx, match_type in ele[1]:
+                    #         print(">>\t", self.idx2word[word_idx], idx2match_mix[match_type])
                 else:
                     raise Exception
 
@@ -302,32 +321,41 @@ def fragments(sentence_len, max_span_len) -> List[FragIdx]:
     return ret
 
 
-def match_lex_naive(chars, lexicon2idx, max_match_num):
+def match_lex_mix(chars, lexicon2idx):
     mapping_dict = {}  # type: Dict[FragIdx, int]
     ret = []
     length = len(chars)
     # print(self.__max_span_len)
     # print(fragments(length, self.__max_span_len))
     for i, j in fragments(length, config.max_span_length):
-        if i != j:
-            lexicon = "".join(chars[i:j + 1])
-            if lexicon in lexicon2idx:
-                mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
+        lexicon = "".join(chars[i:j + 1])
+        if lexicon in lexicon2idx:
+            mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
     for i, j in fragments(length, config.max_span_length):
         matched_lexicons = []
-        for sub_i in range(i, j + 1):
-            for sub_j in range(sub_i, j + 1):
+        for sub_i in upto(i, j):
+            for sub_j in upto(sub_i, j):
                 if FragIdx(sub_i, sub_j) in mapping_dict:
-                    if sub_i == i:
-                        if sub_j == j:
-                            m_idx = match2idx_naive['full_match']
+                    if sub_i == i and sub_j == j:
+                        m_idx = match2idx_mix['full_match']
+                    elif sub_i == i and sub_j != j:
+                        if sub_j == i:
+                            m_idx = match2idx_mix["pre_1"]
+                        elif sub_j == i + 1:
+                            m_idx = match2idx_mix["pre_2"]
                         else:
-                            m_idx = match2idx_naive['prefix_match']
+                            m_idx = match2idx_mix["pre_3"]
+                    elif sub_i != i and sub_j == j:
+                        if j == sub_i:
+                            m_idx = match2idx_mix["suff_1"]
+                        elif j == sub_i + 1:
+                            m_idx = match2idx_mix["suff_2"]
+                        else:
+                            m_idx = match2idx_mix["suff_3"]
+                    elif sub_i != sub_j:
+                            m_idx = match2idx_mix["inter_match"]
                     else:
-                        if sub_j == j:
-                            m_idx = match2idx_naive['suffix_match']
-                        else:
-                            m_idx = match2idx_naive['inter_match']
+                        continue
                     matched_lexicons.append(
                         pair(mapping_dict[FragIdx(sub_i, sub_j)], m_idx)
                     )
@@ -335,7 +363,7 @@ def match_lex_naive(chars, lexicon2idx, max_match_num):
         matched_lexicons = matched_lexicons[:max_match_num]
         if len(matched_lexicons) == 0:
             matched_lexicons.append(
-                pair(lexicon2idx[Sp.oov], match2idx_naive['no_match'])
+                pair(lexicon2idx[Sp.non], match2idx_mix["no_match"])
             )
         ret.append(
             (pair(i, j), matched_lexicons)
@@ -387,6 +415,47 @@ def match_lex_presuff(chars, lexicon2idx):
     return ret
 
 
+def match_lex_naive(chars, lexicon2idx):
+    mapping_dict = {}  # type: Dict[FragIdx, int]
+    ret = []
+    length = len(chars)
+    # print(self.__max_span_len)
+    # print(fragments(length, self.__max_span_len))
+    for i, j in fragments(length, config.max_span_length):
+        if i != j:
+            lexicon = "".join(chars[i:j + 1])
+            if lexicon in lexicon2idx:
+                mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
+    for i, j in fragments(length, config.max_span_length):
+        matched_lexicons = []
+        for sub_i in upto(i, j):
+            for sub_j in upto(sub_i, j):
+                if FragIdx(sub_i, sub_j) in mapping_dict:
+                    if sub_i == i:
+                        if sub_j == j:
+                            m_idx = match2idx_naive["full_match"]
+                        else:
+                            m_idx = match2idx_naive['prefix_match']
+                    else:
+                        if sub_j == j:
+                            m_idx = match2idx_naive['suffix_match']
+                        else:
+                            m_idx = match2idx_naive['inter_match']
+                    matched_lexicons.append(
+                        pair(mapping_dict[FragIdx(sub_i, sub_j)], m_idx)
+                    )
+        matched_lexicons.sort(key=lambda x: x[1])
+        matched_lexicons = matched_lexicons[:max_match_num]
+        if len(matched_lexicons) == 0:
+            matched_lexicons.append(
+                pair(lexicon2idx[Sp.non], match2idx_naive["no_match"])
+            )
+        ret.append(
+            (pair(i, j), matched_lexicons)
+        )
+    return ret
+
+
 def gen_lexicon_vocab(*data_paths, word2vec_path, out_folder, use_cache=False):
     if use_cache and os.path.exists("{}/lexicon.vocab".format(out_folder)):
         log("cache for lexicon vocab exists.")
@@ -396,7 +465,7 @@ def gen_lexicon_vocab(*data_paths, word2vec_path, out_folder, use_cache=False):
         word = re.split(r"\s+", line.strip())[0]
         words.add(word)
 
-    lexicon = {Sp.pad: 0, Sp.oov: 1}
+    lexicon = {Sp.pad: 0, Sp.oov: 1, Sp.non: 2}
     for data_path in data_paths:
         print("Gen lexicon for", data_path)
         sentences = load_sentences(data_path)
