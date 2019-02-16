@@ -221,8 +221,9 @@ def main():
         """
         Development
         """
+        thresholds = [-1, 0.1, 0.2, 0.3, 0.4]
         crf_evaluator = CRFEvaluator(idx2tag=idx2ner)
-        luban_evaluator = LubanEvaluator()
+        luban_evals = [LubanEvaluator() for _ in range(len(thresholds))]
         with torch.no_grad():
             luban7.eval()
             sets_for_validation = {"dev_set": dev_set, "test_set": test_set}
@@ -252,34 +253,40 @@ def main():
                         score, span_ys = luban7.get_span_score_tags(batch_data)
                         score_probs = F.softmax(score, dim=1)
 
-                        pred = cast_list(torch.argmax(score, 1))
+                        for ts_id, threshold in enumerate(thresholds):
+                            if threshold == -1:
+                                pred = cast_list(torch.argmax(score_probs, 1))
+                            else:
+                                ner_score_probs = score_probs.clone()
+                                ner_score_probs[:, 0] = threshold
+                                pred = cast_list(torch.argmax(ner_score_probs, 1))
 
-                        offset = 0
-                        for bid in range(len(text_lens)):
-                            log_to_buffer("[{:>4}] {}".format(
-                                progress.complete_num + bid,
-                                idx2str(batch_data[bid].chars)))
-                            enum_spans = enum_span_by_length(text_lens[bid])
-                            # fragment_score = score[offset: offset + len(enum_spans)]
-                            # log(fragment_score)
-                            luban_spans = []
-                            for sid, span in enumerate(enum_spans):
-                                begin_idx, end_idx = span
-                                span_offset = sid + offset
-                                if pred[span_offset] != 0 or span_ys[span_offset] != 0:
-                                    luban_span = LubanSpan(
-                                        bid=begin_idx, eid=end_idx, lid=pred[span_offset],
-                                        pred_prob=score_probs[span_offset][pred[span_offset]],
-                                        gold_prob=score_probs[span_offset][span_ys[span_offset]],
-                                        pred_label=idx2label[pred[span_offset]],
-                                        gold_label=idx2label[span_ys[span_offset]],
-                                        fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
-                                    )
-                                    luban_spans.append(luban_span)
-                                    log_to_buffer(luban_span_to_str(luban_span))
-                            luban_evaluator.decode(luban_spans)
-                            offset += len(enum_spans)
-                        log_flush_buffer()
+                            offset = 0
+                            for bid in range(len(text_lens)):
+                                log_to_buffer("[{:>4}] [ ts = {:>.1f} ] {}".format(
+                                    progress.complete_num + bid, threshold,
+                                    idx2str(batch_data[bid].chars)))
+                                enum_spans = enum_span_by_length(text_lens[bid])
+                                # fragment_score = score[offset: offset + len(enum_spans)]
+                                # log(fragment_score)
+                                luban_spans = []
+                                for sid, span in enumerate(enum_spans):
+                                    begin_idx, end_idx = span
+                                    span_offset = sid + offset
+                                    if pred[span_offset] != 0 or span_ys[span_offset] != 0:
+                                        luban_span = LubanSpan(
+                                            bid=begin_idx, eid=end_idx, lid=pred[span_offset],
+                                            pred_prob=score_probs[span_offset][pred[span_offset]],
+                                            gold_prob=score_probs[span_offset][span_ys[span_offset]],
+                                            pred_label=idx2label[pred[span_offset]],
+                                            gold_label=idx2label[span_ys[span_offset]],
+                                            fragment=idx2str(batch_data[bid].chars[begin_idx: end_idx + 1])
+                                        )
+                                        luban_spans.append(luban_span)
+                                        log_to_buffer(luban_span_to_str(luban_span))
+                                luban_evals[ts_id].decode(luban_spans)
+                                offset += len(enum_spans)
+                            log_flush_buffer()
 
                     # <<< Luban
 
@@ -287,8 +294,9 @@ def main():
 
                 log("** result.crf epoch {} on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
                     epoch_id, set_name, *crf_evaluator.prf))
-                log("** result.luban epoch {} on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
-                    epoch_id, set_name, *luban_evaluator.prf))
+                for ts_id in range(len(thresholds)):
+                    log("** result.luban epoch {}[threshold{:.2f}] on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
+                        epoch_id, thresholds[ts_id], set_name, *luban_evals[ts_id].prf))
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
         """
