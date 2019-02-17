@@ -10,7 +10,7 @@ from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
 from dataset import Sp, match2idx_naive, match2idx_presuff, match2idx_mix, max_match_num
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
-from attention import MultiHeadAttention, gen_att_mask
+from attention import MultiHeadAttention, gen_att_mask, VanillaAttention
 from torch_crf import CRF
 from program_args import config
 
@@ -35,10 +35,12 @@ class Luban7(torch.nn.Module):
                                    char_emb_size=config.char_emb_size,
                                    seg_vocab_size=len(seg2idx),
                                    seg_emb_size=config.seg_emb_size,
+                                   seg_dropout=config.drop_segpos,
                                    bichar_vocab_size=len(bichar2idx),
                                    bichar_emb_size=config.bichar_emb_size,
                                    pos_vocab_size=len(pos2idx),
                                    pos_emb_size=config.pos_emb_size,
+                                   pos_dropout=config.drop_segpos,
                                    sparse=config.use_sparse_embed == "on")
         if config.char_emb_size > 0 and config.char_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.char_embeds,
@@ -180,16 +182,24 @@ class Luban7(torch.nn.Module):
             self.match_embeds = torch.nn.Embedding(match_vocab_size,
                                                    config.match_emb_size,
                                                    sparse=config.use_sparse_embed == "on")
-            self.lexicon_attention = MultiHeadAttention(
-                d_q=frag_dim,
-                d_k=config.lexicon_emb_dim + config.match_emb_size,
-                d_v=config.lexicon_emb_dim + config.match_emb_size,
-                d_att_k=frag_dim // 2,
-                d_att_v=frag_dim // 2,
-                n_head=config.match_head,
-                dropout=config.drop_default,
-                d_out=frag_dim)
-            frag_dim = frag_dim * 2
+            if config.match_head > 0:
+                self.lexicon_attention = MultiHeadAttention(
+                    d_q=frag_dim,
+                    d_k=config.lexicon_emb_dim + config.match_emb_size,
+                    d_v=config.lexicon_emb_dim + config.match_emb_size,
+                    d_att_k=frag_dim // config.match_head,
+                    d_att_v=frag_dim // config.match_head,
+                    n_head=config.match_head,
+                    dropout=config.drop_default,
+                    d_out=frag_dim)
+                frag_dim = frag_dim * 2
+            elif config.match_head == 0:
+                self.lexicon_attention = VanillaAttention(query_size=frag_dim,
+                                                          mem_size=config.lexicon_emb_dim + config.match_emb_size,
+                                                          dropout=config.drop_default)
+                frag_dim += config.lexicon_emb_dim + config.match_emb_size
+            else:
+                raise Exception
         elif config.match_mode == "presuff":
             self.match_embeds = torch.nn.Embedding(len(match2idx_presuff),
                                                    config.match_emb_size,
@@ -351,7 +361,12 @@ class Luban7(torch.nn.Module):
             mem_lexicon = self.lexicon_embeds(frag_match_lexicons)
             mem_match = self.match_embeds(frag_match_types)
             memory = torch.cat([mem_lexicon, mem_match], dim=2)
-            att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
+            if config.match_head == 0:
+                att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, mask)
+            elif config.match_head > 0:
+                att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
+            else:
+                raise Exception
             frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
         elif config.match_mode == "presuff":
             lexmatches = group_fields(batch_data, keys='lexmatches')

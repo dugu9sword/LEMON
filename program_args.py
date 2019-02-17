@@ -59,7 +59,7 @@ class ProgramArgs(argparse.Namespace):
 
         # lexicon embedding
         self.match_mode = "mix"
-        self.match_head = 2
+        self.match_head = 2     # 1,2,3...: multi-head attention; 0: vanilla attention
         self.match_emb_size = 25
         self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
         self.lexicon_emb_dim = 50
@@ -70,6 +70,7 @@ class ProgramArgs(argparse.Namespace):
 
         # regularization
         self.drop_default = 0.1
+        self.drop_segpos = 0.1
         self.drop_token_encoder = 0.1
         # self.drop_frag = 0.1
         self.drop_nonlinear = 0

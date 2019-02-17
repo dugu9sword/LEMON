@@ -10,6 +10,13 @@ from attention import *
 from buff import *
 from dataset import *
 
+# for i in range(10):
+#     print(i)
+#     i += 1
+#     print("in", i)
+# exit()
+
+
 log_config("main.txt", "cf")
 used_data_set = usable_data_sets[config.use_data_set]
 vocab_folder = "dataset/ontonotes4/{}.vocab.{}.{}.{}".format(

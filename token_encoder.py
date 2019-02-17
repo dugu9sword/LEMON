@@ -7,8 +7,8 @@ class MixEmbedding(torch.nn.Module):
     def __init__(self,
                  char_vocab_size, char_emb_size,
                  bichar_vocab_size, bichar_emb_size,
-                 seg_vocab_size, seg_emb_size,
-                 pos_vocab_size, pos_emb_size,
+                 seg_vocab_size, seg_emb_size, seg_dropout,
+                 pos_vocab_size, pos_emb_size, pos_dropout,
                  sparse=False):
         super(MixEmbedding, self).__init__()
         self.char_embeds = torch.nn.Embedding(char_vocab_size, char_emb_size, sparse=sparse)
@@ -18,10 +18,12 @@ class MixEmbedding(torch.nn.Module):
             self.bichar_embeds = None
         if seg_emb_size > 0:
             self.seg_embeds = torch.nn.Embedding(seg_vocab_size, seg_emb_size, sparse=sparse)
+            self.seg_drop = torch.nn.Dropout(seg_dropout)
         else:
             self.seg_embeds = None
         if pos_emb_size > 0:
             self.pos_embeds = torch.nn.Embedding(pos_vocab_size, pos_emb_size, sparse=sparse)
+            self.pos_drop = torch.nn.Dropout(pos_dropout)
         else:
             self.pos_embeds = None
         self.__fix_grad = False
@@ -43,9 +45,9 @@ class MixEmbedding(torch.nn.Module):
         else:
             embeds_to_cat = [self.char_embeds(pad_chars)]
         if self.seg_embeds:
-            embeds_to_cat.append(self.seg_embeds(pad_segs))
+            embeds_to_cat.append(self.seg_drop(self.seg_embeds(pad_segs)))
         if self.pos_embeds:
-            embeds_to_cat.append(self.pos_embeds(pad_poss))
+            embeds_to_cat.append(self.pos_drop(self.pos_embeds(pad_poss)))
         if self.bichar_embeds:
             embeds_to_cat.append(self.bichar_embeds(pad_bichars))
         final_embs = torch.cat(embeds_to_cat, dim=2)

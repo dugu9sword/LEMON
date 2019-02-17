@@ -131,24 +131,30 @@ class ScaledDotProductAttention(nn.Module):
                     len_q times on the second dimension.)
         """
         attn = torch.bmm(q, k.transpose(1, 2))
-        # if attn.size(2) < 2:
-        #     from buff import Color
-        #     print(Color.red('FUCK'))
         attn = attn / self.temperature
 
-        # print('att', attn.size())
         if mask is not None:
             attn = attn.masked_fill(mask, -np.inf)
 
         attn = self.softmax(attn)
-        # print(attn.size())
-        # if attn.size(2) < 2:
-        #     from buff import Color
-        #     print(Color.red('FUCK'))
-        #     print(attn[0][0])
-        #     if torch.isnan(attn.sum()):
-        #         exit()
         attn = self.dropout(attn)
         output = torch.bmm(attn, v)
 
+        return output, attn
+
+
+class VanillaAttention(nn.Module):
+    def __init__(self,
+                 query_size, mem_size,
+                 dropout=0.1):
+        super().__init__()
+        self.aff_query = nn.Linear(query_size, mem_size)
+        nn.init.normal_(self.aff_query.weight, mean=0, std=np.sqrt(2.0 / (query_size + mem_size)))
+        self.attention = ScaledDotProductAttention(temperature=np.power(mem_size, 0.5))
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, query, memory, mask=None):
+        query = self.aff_query(query)
+        output, attn = self.attention(query, memory, memory, mask=mask)
+        output = self.dropout(output)
         return output, attn
