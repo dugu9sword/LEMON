@@ -29,6 +29,7 @@ class Luban7(torch.nn.Module):
         self.seg2idx = seg2idx
         self.label2idx = label2idx
         self.pos2idx = pos2idx
+        self.lexicon2idx = lexicon2idx
 
         """ Embedding Layer """
         self.embeds = MixEmbedding(char_vocab_size=len(char2idx),
@@ -122,6 +123,15 @@ class Luban7(torch.nn.Module):
             pass
         else:
             raise Exception
+        if config.frag_use_sos == "on":
+            self.sos_token = torch.nn.Parameter(torch.Tensor(token_dim))
+            self.eos_token = torch.nn.Parameter(torch.Tensor(token_dim))
+            std = 1. / math.sqrt(token_dim)
+            self.sos_token.data.uniform_(-std, std)
+            self.eos_token.data.uniform_(-std, std)
+        else:
+            self.sos_token = None
+            self.eos_token = None
 
         if config.frag_type != "off":
             if config.frag_fusion == 'cat':
@@ -299,7 +309,9 @@ class Luban7(torch.nn.Module):
         token_reprs = self.compute_token_reprs(batch_data)
 
         if config.frag_type != "off":
-            frag_reprs = self.fragment_encoder(token_reprs, text_lens)
+            frag_reprs = self.fragment_encoder(token_reprs, text_lens,
+                                               sos_repr=self.sos_token,
+                                               eos_repr=self.eos_token)
             if config.frag_att_type != "off":
                 # print(Color.red("ATTENTION!"))
                 d_frag = frag_reprs.size(1)

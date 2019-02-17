@@ -465,7 +465,7 @@ def gen_lexicon_vocab(*data_paths, word2vec_path, out_folder, use_cache=False):
         word = re.split(r"\s+", line.strip())[0]
         words.add(word)
 
-    lexicon = {Sp.pad: 0, Sp.oov: 1, Sp.non: 2}
+    lexicon = {Sp.pad: 0, Sp.oov: 1, Sp.non: 2, Sp.sos: 3, Sp.eos: 4}
     for data_path in data_paths:
         print("Gen lexicon for", data_path)
         sentences = load_sentences(data_path)

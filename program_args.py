@@ -47,6 +47,7 @@ class ProgramArgs(argparse.Namespace):
         self.frag_type = "rnn"
         self.frag_fusion = 'cat'
         self.frag_fofe_alpha = 0.5
+        self.frag_use_sos = "on"
 
         # fragment attention
         self.frag_att_type = 'off'

@@ -41,14 +41,27 @@ class FragmentEnumerator(torch.nn.Module):
 
         return batch_b2e_sub_inputs, batch_e2b_sub_inputs
 
-    def forward(self, inputs: torch.Tensor, lengths: list):
+    def forward(self, inputs: torch.Tensor, lengths: list,
+                sos_repr=None, eos_repr=None):
         b2e_sub_inputs, e2b_sub_inputs = self.enumerate_inputs(inputs, lengths)
+        if sos_repr is not None:
+            # print(b2e_sub_inputs.mean().item(), b2e_sub_inputs.std().item(),
+            #       sos_repr.mean().item(), sos_repr.std().item())
+            b2e_sub_inputs = torch.cat((sos_repr.expand((b2e_sub_inputs.size(0), 1, -1)),
+                                        b2e_sub_inputs), dim=1)
+        if eos_repr is not None:
+            e2b_sub_inputs = torch.cat((eos_repr.expand((e2b_sub_inputs.size(0), 1, -1)),
+                                        e2b_sub_inputs), dim=1)
 
         # flatten 成 [RNN 数量 * max_span_len， dim]
         b2e_sub_outputs = self.b2e_encoder(b2e_sub_inputs)
+        if sos_repr is not None:
+            b2e_sub_outputs = b2e_sub_outputs[:, 1:, :]
         b2e_sub_outputs = b2e_sub_outputs.contiguous().view(-1, b2e_sub_outputs.size(2))
 
         e2b_sub_outputs = self.e2b_encoder(e2b_sub_inputs)
+        if eos_repr is not None:
+            e2b_sub_outputs = e2b_sub_outputs[:, 1:, :]
         e2b_sub_outputs = e2b_sub_outputs.contiguous().view(-1, e2b_sub_outputs.size(2))
 
         b2e_ids, e2b_ids = gen_fragment_ids(lengths, self.max_span_len)
