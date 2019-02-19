@@ -15,6 +15,11 @@ from torch_crf import CRF
 from program_args import config
 
 
+def lexicon_name_dim(lexicon_pretrain_file):
+    found = re.search(r"([^/.]*.(\d+)).vec", lexicon_pretrain_file)
+    return found.group(1), int(found.group(2))
+
+
 class Luban7(torch.nn.Module):
 
     def __init__(self,
@@ -173,50 +178,51 @@ class Luban7(torch.nn.Module):
 
         """ Lexicon Embedding """
         if config.match_mode != "off":
+            lexicon_emb_name, lexicon_emb_dim = lexicon_name_dim(config.lexicon_emb_pretrain)
             self.lexicon_embeds = torch.nn.Embedding(len(lexicon2idx),
-                                                     config.lexicon_emb_dim,
+                                                     lexicon_emb_dim,
                                                      sparse=config.use_sparse_embed == "on")
             load_word2vec(
                 self.lexicon_embeds,
                 lexicon2idx,
                 config.lexicon_emb_pretrain,
                 norm=True,
-                cached_name="{}.lexicon".format(
-                    config.lexicon_emb_pretrain.split('/')[1]) if config.load_from_cache == "on" else None
+                cached_name="{}.lexicon".format(lexicon_emb_name)
+                if config.load_from_cache == "on" else None
             )
-        if config.match_mode == "naive" or config.match_mode == "mix":
-            if config.match_mode == "naive":
-                match_vocab_size = len(match2idx_naive)
-            else:
-                match_vocab_size = len(match2idx_mix)
-            self.match_embeds = torch.nn.Embedding(match_vocab_size,
-                                                   config.match_emb_size,
-                                                   sparse=config.use_sparse_embed == "on")
-            if config.match_head > 0:
-                self.lexicon_attention = MultiHeadAttention(
-                    d_q=frag_dim,
-                    d_k=config.lexicon_emb_dim + config.match_emb_size,
-                    d_v=config.lexicon_emb_dim + config.match_emb_size,
-                    d_att_k=frag_dim // config.match_head,
-                    d_att_v=frag_dim // config.match_head,
-                    n_head=config.match_head,
-                    dropout=config.drop_default,
-                    d_out=frag_dim)
-                frag_dim = frag_dim * 2
-            elif config.match_head == 0:
-                self.lexicon_attention = VanillaAttention(query_size=frag_dim,
-                                                          mem_size=config.lexicon_emb_dim + config.match_emb_size,
-                                                          dropout=config.drop_default)
-                frag_dim += config.lexicon_emb_dim + config.match_emb_size
+            if config.match_mode == "naive" or config.match_mode == "mix":
+                if config.match_mode == "naive":
+                    match_vocab_size = len(match2idx_naive)
+                else:
+                    match_vocab_size = len(match2idx_mix)
+                self.match_embeds = torch.nn.Embedding(match_vocab_size,
+                                                       config.match_emb_size,
+                                                       sparse=config.use_sparse_embed == "on")
+                if config.match_head > 0:
+                    self.lexicon_attention = MultiHeadAttention(
+                        d_q=frag_dim,
+                        d_k=lexicon_emb_dim + config.match_emb_size,
+                        d_v=lexicon_emb_dim + config.match_emb_size,
+                        d_att_k=frag_dim // config.match_head,
+                        d_att_v=frag_dim // config.match_head,
+                        n_head=config.match_head,
+                        dropout=config.drop_default,
+                        d_out=frag_dim)
+                    frag_dim = frag_dim * 2
+                elif config.match_head == 0:
+                    self.lexicon_attention = VanillaAttention(query_size=frag_dim,
+                                                              mem_size=lexicon_emb_dim + config.match_emb_size,
+                                                              dropout=config.drop_default)
+                    frag_dim += lexicon_emb_dim + config.match_emb_size
+                else:
+                    raise Exception
+            elif config.match_mode == "presuff":
+                self.match_embeds = torch.nn.Embedding(len(match2idx_presuff),
+                                                       config.match_emb_size,
+                                                       sparse=config.use_sparse_embed == "on")
+                frag_dim = frag_dim + lexicon_emb_dim * 2 + config.match_emb_size
             else:
                 raise Exception
-        elif config.match_mode == "presuff":
-            self.match_embeds = torch.nn.Embedding(len(match2idx_presuff),
-                                                   config.match_emb_size,
-                                                   sparse=config.use_sparse_embed == "on")
-            frag_dim = frag_dim + config.lexicon_emb_dim * 2 + config.match_emb_size
-        else:
-            raise Exception
 
         self.scorer = torch.nn.Sequential(
             torch.nn.Linear(frag_dim, 2 * frag_dim),

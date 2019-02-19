@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from functools import lru_cache
 from dataset import ConllDataSet, gen_lexicon_vocab, load_vocab, gen_vocab, usable_data_sets, match2idx_naive
 from program_args import config
-from model import Luban7
+from model import Luban7, lexicon_name_dim
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
 import pdb
 
@@ -26,15 +26,18 @@ def enum_span_by_length(text_len):
     return span_lst
 
 
+
+
 ###################################################################
 # Main
 ###################################################################
 
 def main():
-    log_config("main.txt", "cf")
+    log_config("main.txt.{}".format(time.time()), "cf")
     used_data_set = usable_data_sets[config.use_data_set]
-    vocab_folder = "dataset/ontonotes4/{}.vocab.{}.{}.{}".format(
-        config.use_data_set,
+    lex_vec_name, _ = lexicon_name_dim(config.lexicon_emb_pretrain)
+    vocab_folder = "dataset/ontonotes4/{}.vocab.{}.{}.{}.{}".format(
+        config.use_data_set, lex_vec_name,
         config.char_count_gt, config.bichar_count_gt, config.pos_bmes)
     gen_vocab(data_path=used_data_set[0],
               out_folder=vocab_folder,
@@ -43,7 +46,7 @@ def main():
               use_cache=config.load_from_cache == "on",
               ignore_tag_bmes=config.pos_bmes == 'off')
     gen_lexicon_vocab(*used_data_set,
-                      word2vec_path="word2vec/lattice_lstm/ctb.50d.vec",
+                      word2vec_path=config.lexicon_emb_pretrain,
                       out_folder=vocab_folder,
                       use_cache=config.load_from_cache == "on")
 
@@ -57,7 +60,7 @@ def main():
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
-        "train_set.{}.{}".format(config.use_data_set, config.match_mode),
+        "train_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
         lambda: ConllDataSet(
             data_path=used_data_set[0],
             lexicon2idx=lexicon2idx,
@@ -68,7 +71,7 @@ def main():
             max_span_len=config.max_span_length,
             sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
     dev_set = auto_create(
-        "dev_set.{}.{}".format(config.use_data_set, config.match_mode),
+        "dev_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
         lambda: ConllDataSet(
             data_path=used_data_set[1],
             lexicon2idx=lexicon2idx,
@@ -79,7 +82,7 @@ def main():
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     test_set = auto_create(
-        "test_set.{}.{}".format(config.use_data_set, config.match_mode),
+        "test_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
         lambda: ConllDataSet(
             data_path=used_data_set[2],
             lexicon2idx=lexicon2idx,

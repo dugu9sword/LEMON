@@ -353,7 +353,7 @@ def match_lex_mix(chars, lexicon2idx):
                         else:
                             m_idx = match2idx_mix["suff_3"]
                     elif sub_i != sub_j:
-                            m_idx = match2idx_mix["inter_match"]
+                        m_idx = match2idx_mix["inter_match"]
                     else:
                         continue
                     matched_lexicons.append(
@@ -461,7 +461,7 @@ def gen_lexicon_vocab(*data_paths, word2vec_path, out_folder, use_cache=False):
         log("cache for lexicon vocab exists.")
         return
     words = set()
-    for line in open(word2vec_path, encoding="utf8"):
+    for line in open(word2vec_path, encoding="utf8", errors="ignore"):
         word = re.split(r"\s+", line.strip())[0]
         words.add(word)
 

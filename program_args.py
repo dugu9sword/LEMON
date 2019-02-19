@@ -7,8 +7,8 @@ class ProgramArgs(argparse.Namespace):
         super(ProgramArgs, self).__init__()
         self.max_span_length = 10
         self.max_sentence_length = 120
-        self.char_count_gt = 2
-        self.bichar_count_gt = 2
+        self.char_count_gt = 0
+        self.bichar_count_gt = 0
 
         self.token_type = "rnn"
 
@@ -21,14 +21,13 @@ class ProgramArgs(argparse.Namespace):
         self.lr_gamma = 0.95
 
         # embedding settings
-        self.char_emb_size = 50
+        self.char_emb_size = 300
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
         self.pos_emb_size = 25
         self.pos_bmes = 'off'
-        self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
-        # self.char_emb_pretrain = "word2vec/sgns/sgns.merge.char"
-        # self.char_emb_pretrain = "word2vec/fasttext/wiki.zh.vec"
+        # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
+        self.char_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
         # self.char_emb_pretrain = "off"
 
         self.bichar_emb_pretrain = 'off'
@@ -59,11 +58,17 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.match_mode = "mix"
-        self.match_head = 2     # 1,2,3...: multi-head attention; 0: vanilla attention
+        self.match_mode = "naive"
+        self.match_head = 0  # 1,2,3...: multi-head attention; 0: vanilla attention
         self.match_emb_size = 25
-        self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
-        self.lexicon_emb_dim = 50
+        # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
+        # self.lexicon_emb_dim = 50
+
+        # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.50.vec"
+        # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.300.vec"
+        # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_bigram.300.vec"
+        # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
+        self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
 
         # loss
         self.focal_gamma = 0

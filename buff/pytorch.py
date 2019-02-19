@@ -119,25 +119,30 @@ def load_word2vec(embedding: torch.nn.Embedding,
                   cached_name=None):
     cache = "{}{}".format(cached_name, ".norm" if norm else "")
     if cached_name and exist_var(cache):
-        log("Load vocab from cache {}".format(cache))
+        log("Load word2vec from cache {}".format(cache))
         pre_embedding = load_var(cache)
     else:
-        log("Load vocab from {}".format(word2vec_path))
+        log("Load word2vec from {}".format(word2vec_path))
         pre_embedding = np.random.normal(0, 1, embedding.weight.size())
         word2vec_file = open(word2vec_path, errors='ignore')
         # x = 0
         found = 0
+        emb_size = -1
+        error_num = 0
         for line in word2vec_file.readlines():
             # x += 1
             # log("Process line {} in file {}".format(x, word2vec_path))
             split = re.split(r"\s+", line.strip())
-            # for word2vec, the first line is meta info: (NUMBER, SIZE)
-            if len(split) < 10:
+            if emb_size == -1:
+                emb_size = len(split) - 1
+            if len(split) != emb_size + 1 or len(split) < 10:
+                error_num += 1
                 continue
             word = split[0]
             if word in word_dict:
                 found += 1
                 pre_embedding[word_dict[word]] = np.array(list(map(float, split[1:])))
+        log("Error line: ", error_num)
         log("Pre_train match case: {:.4f}".format(found / len(word_dict)))
         if norm:
             pre_embedding = pre_embedding / np.std(pre_embedding)
