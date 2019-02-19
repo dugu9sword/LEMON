@@ -26,17 +26,15 @@ def enum_span_by_length(text_len):
     return span_lst
 
 
-
-
 ###################################################################
 # Main
 ###################################################################
 
 def main():
-    log_config("main.txt.{}".format(time.time()), "cf")
+    log_config("main.txt.{}".format(time.strftime("%m%d.%H%M%S")), "cf")
     used_data_set = usable_data_sets[config.use_data_set]
     lex_vec_name, _ = lexicon_name_dim(config.lexicon_emb_pretrain)
-    vocab_folder = "dataset/ontonotes4/{}.vocab.{}.{}.{}.{}".format(
+    vocab_folder = "saved/{}.vocab.{}.{}.{}.{}".format(
         config.use_data_set, lex_vec_name,
         config.char_count_gt, config.bichar_count_gt, config.pos_bmes)
     gen_vocab(data_path=used_data_set[0],
@@ -298,8 +296,9 @@ def main():
                 log("** result.crf epoch {} on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
                     epoch_id, set_name, *crf_evaluator.prf))
                 for ts_id in range(len(thresholds)):
-                    log("** result.luban epoch {}[threshold{:.2f}] on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
-                        epoch_id, thresholds[ts_id], set_name, *luban_evals[ts_id].prf))
+                    log(
+                        "** result.luban epoch {}[threshold{:.2f}] on {}: precision {:.4f}, recall {:.4f}, f1 {:.4f}".format(
+                            epoch_id, thresholds[ts_id], set_name, *luban_evals[ts_id].prf))
                 log("<<< epoch {} validation on {}".format(epoch_id, set_name))
 
         """

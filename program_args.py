@@ -21,13 +21,13 @@ class ProgramArgs(argparse.Namespace):
         self.lr_gamma = 0.95
 
         # embedding settings
-        self.char_emb_size = 300
+        self.char_emb_size = 50
         self.bichar_emb_size = 0
         self.seg_emb_size = 25
         self.pos_emb_size = 25
         self.pos_bmes = 'off'
-        # self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
-        self.char_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
+        self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
+        # self.char_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
         # self.char_emb_pretrain = "off"
 
         self.bichar_emb_pretrain = 'off'
@@ -90,7 +90,7 @@ class ProgramArgs(argparse.Namespace):
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "thu"
+        self.use_data_set = "msra"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"
