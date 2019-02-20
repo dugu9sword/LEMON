@@ -50,7 +50,7 @@ def permute_cols(*files, pidx, out_file):
 #              out_file="../dataset/ontonotes4/{}.mix.bmes.{}".format(name, pred))
 
 
-name = 'test'
+name = 'train'
 permute_cols("../dataset/msra/{}.ner.bmes".format(name),
              "../dataset/msra/{}.seg.bmes.thu".format(name),
              "../dataset/msra/{}.pos.bmes.thu".format(name),
