@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from functools import lru_cache
 from dataset import ConllDataSet, gen_lexicon_vocab, load_vocab, gen_vocab, usable_data_sets, match2idx_naive
 from program_args import config
-from model import Luban7, lexicon_name_dim
+from model import Luban7, gen_word2vec_name_dim
 from evaluation import CRFEvaluator, LubanEvaluator, LubanSpan, luban_span_to_str
 import pdb
 
@@ -33,10 +33,17 @@ def enum_span_by_length(text_len):
 def main():
     log_config("main.txt.{}".format(time.strftime("%m%d.%H%M%S")), "cf")
     used_data_set = usable_data_sets[config.use_data_set]
-    lex_vec_name, _ = lexicon_name_dim(config.lexicon_emb_pretrain)
-    vocab_folder = "saved/{}.vocab.{}.{}.{}.{}".format(
-        config.use_data_set, lex_vec_name,
-        config.char_count_gt, config.bichar_count_gt, config.pos_bmes)
+    lex_vec_name, _ = gen_word2vec_name_dim(config.lexicon_emb_pretrain)
+    char_emb_name, _ = gen_word2vec_name_dim(config.char_emb_pretrain)
+    model_folder = "saved/{}.{}.{}.{}.{}.{}.{}.{}.{}.{}".format(
+        config.use_data_set, config.match_mode,
+        config.max_sentence_length, config.max_span_length, config.max_match_num,
+        char_emb_name, lex_vec_name,
+        config.char_count_gt, config.bichar_count_gt, config.pos_bmes
+    )
+    set_saved_path(model_folder)
+
+    vocab_folder = "{}/vocab".format(model_folder)
     gen_vocab(data_path=used_data_set[0],
               out_folder=vocab_folder,
               char_count_gt=config.char_count_gt,
@@ -58,7 +65,7 @@ def main():
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
-        "train_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
+        "train_set",
         lambda: ConllDataSet(
             data_path=used_data_set[0],
             lexicon2idx=lexicon2idx,
@@ -69,24 +76,24 @@ def main():
             max_span_len=config.max_span_length,
             sort_by_length=True), cache=config.load_from_cache == "on")  # type: ConllDataSet
     dev_set = auto_create(
-        "dev_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
+        "dev_set",
         lambda: ConllDataSet(
             data_path=used_data_set[1],
             lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            # max_text_len=config.max_sentence_length,
+            max_text_len=config.max_sentence_length,
             # max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet
     test_set = auto_create(
-        "test_set.{}.{}.{}".format(config.use_data_set, config.match_mode, lex_vec_name),
+        "test_set",
         lambda: ConllDataSet(
             data_path=used_data_set[2],
             lexicon2idx=lexicon2idx,
             char2idx=char2idx, bichar2idx=bichar2idx, seg2idx=seg2idx,
             pos2idx=pos2idx, ner2idx=ner2idx, label2idx=label2idx,
-            # max_text_len=config.max_sentence_length,
+            max_text_len=config.max_sentence_length,
             # max_span_len=config.max_span_length,
             ignore_pos_bmes=config.pos_bmes == 'off',
             sort_by_length=False), cache=config.load_from_cache == "on")  # type: ConllDataSet

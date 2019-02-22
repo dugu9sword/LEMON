@@ -1,5 +1,5 @@
 vocab_path = "dataset/OntoNotes4/vocab.3.2/bichar.vocab"
-emb_path = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
+emb_path = "word2vec/lattice_lstm/gigauni.50.vec"
 
 embs = set()
 for line in open(emb_path, encoding="utf8"):

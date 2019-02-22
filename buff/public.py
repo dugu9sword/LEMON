@@ -56,11 +56,15 @@ def exist_var(name, path=None):
     return os.path.exists("{}/{}.pkl".format(path, name))
 
 
-def auto_create(name, func, cache=False, path=__saved_path__):
+def auto_create(name, func, cache=False, path=None):
+    if path is None:
+        path = __saved_path__
     if cache and exist_var(name, path):
+        print("cache for {} exists".format(name))
         with time_record("*** load {} from cache".format(name)):
             obj = load_var(name, path)
     else:
+        print("cache for {} does not exist".format(name))
         with time_record("*** create {} and save to cache".format(name)):
             obj = func()
             save_var(obj, name, path)

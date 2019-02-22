@@ -15,8 +15,8 @@ from torch_crf import CRF
 from program_args import config
 
 
-def lexicon_name_dim(lexicon_pretrain_file):
-    found = re.search(r"([^/.]*.(\d+)).vec", lexicon_pretrain_file)
+def gen_word2vec_name_dim(word2vec_pretrain):
+    found = re.search(r"([^/.]*.(\d+)).vec", word2vec_pretrain)
     return found.group(1), int(found.group(2))
 
 
@@ -53,18 +53,14 @@ class Luban7(torch.nn.Module):
                           word2vec_path=config.char_emb_pretrain,
                           norm=True,
                           word_dict=self.char2idx,
-                          cached_name="{}.{}.char".format(
-                              config.char_emb_pretrain.split('/')[1],
-                              config.char_count_gt) if config.load_from_cache == "on" else None
+                          cached_name="char" if config.load_from_cache == "on" else None
                           )
         if config.bichar_emb_size > 0 and config.bichar_emb_pretrain != 'off':
             load_word2vec(embedding=self.embeds.bichar_embeds,
                           word2vec_path=config.bichar_emb_pretrain,
                           norm=True,
                           word_dict=self.bichar2idx,
-                          cached_name="{}.{}.bichar".format(
-                              config.bichar_emb_pretrain.split('/')[1],
-                              config.bichar_count_gt) if config.load_from_cache == "on" else None
+                          cached_name="bichar" if config.load_from_cache == "on" else None
                           )
         self.embeds.show_mean_std()
 
@@ -178,7 +174,7 @@ class Luban7(torch.nn.Module):
 
         """ Lexicon Embedding """
         if config.match_mode != "off":
-            lexicon_emb_name, lexicon_emb_dim = lexicon_name_dim(config.lexicon_emb_pretrain)
+            lexicon_emb_name, lexicon_emb_dim = gen_word2vec_name_dim(config.lexicon_emb_pretrain)
             self.lexicon_embeds = torch.nn.Embedding(len(lexicon2idx),
                                                      lexicon_emb_dim,
                                                      sparse=config.use_sparse_embed == "on")
@@ -187,7 +183,7 @@ class Luban7(torch.nn.Module):
                 lexicon2idx,
                 config.lexicon_emb_pretrain,
                 norm=True,
-                cached_name="{}.lexicon".format(lexicon_emb_name)
+                cached_name="lexicon".format(lexicon_emb_name)
                 if config.load_from_cache == "on" else None
             )
             if config.match_mode == "naive" or config.match_mode == "mix":

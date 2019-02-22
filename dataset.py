@@ -9,15 +9,18 @@ import os
 from program_args import config
 import numpy as np
 
-usable_data_sets = {"full": ("dataset/ontonotes4/train.mix.bmes",
+usable_data_sets = {"ontogold": ("dataset/ontonotes4/train.mix.bmes",
                              "dataset/ontonotes4/dev.mix.bmes",
                              "dataset/ontonotes4/test.mix.bmes"),
-                    "thu": ("dataset/ontonotes4/train.mix.bmes.thu",
+                    "ontothu": ("dataset/ontonotes4/train.mix.bmes.thu",
                             "dataset/ontonotes4/dev.mix.bmes.thu",
                             "dataset/ontonotes4/test.mix.bmes.thu"),
-                    "msra": ("dataset/msra/train.mix.bmes.thu",
-                             "dataset/msra/test.mix.bmes.thu",
-                             "dataset/msra/test.mix.bmes.thu"),
+                    "msrathu": ("dataset/msra/train.mix.bmes.thu",
+                                "dataset/msra/test.mix.bmes.thu",
+                                "dataset/msra/test.mix.bmes.thu"),
+                    "msrapred": ("dataset/msra/train.mix.bmes.pred",
+                                 "dataset/msra/test.mix.bmes.pred",
+                                 "dataset/msra/test.mix.bmes.pred"),
                     "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
                              "dataset/ontonotes4/tiny.mix.bmes",
                              "dataset/ontonotes4/tiny.mix.bmes")}
@@ -156,7 +159,7 @@ def gen_vocab(data_path, out_folder,
 
 
 """ Match dict """
-max_match_num = 8
+max_match_num = config.max_match_num
 match2idx_naive = {"full_match": 0,
                    "prefix_match": 1,
                    "suffix_match": 2,
@@ -218,7 +221,6 @@ class ConllDataSet(DataSet):
             for cid in range(sen_len):
                 char = sen[cid][0]
                 chars.append(char2idx[char] if char in char2idx else char2idx[Sp.oov])
-                __sentence_length_count[len(chars)] += 1
 
                 bichar = char + sen[cid + 1][0] if cid < sen_len - 1 else char + Sp.eos
                 bichars.append(bichar2idx[bichar] if bichar in bichar2idx else bichar2idx[Sp.oov])
@@ -251,6 +253,7 @@ class ConllDataSet(DataSet):
                         labels.append(SpanLabel(b=label_b, e=label_e, y=label_y))
                         self.__longest_span_len = max(self.__longest_span_len, label_e - label_b + 1)
 
+            __sentence_length_count[len(chars)] += 1
             if len(chars) < max_text_len:
                 if config.match_mode == "naive":
                     lexmatches = match_lex_naive(group_fields(sen, indices=0),
@@ -459,7 +462,7 @@ def gen_lexicon_vocab(*data_paths, word2vec_path, out_folder, use_cache=False):
         sentences = load_sentences(data_path)
         for sid, sentence in enumerate(sentences):
             chars = group_fields(sentence, indices=0)
-            for i, j in fragments(len(chars), 10):
+            for i, j in fragments(len(chars), config.max_span_length):
                 frag = "".join(chars[i:j + 1])
                 if frag not in lexicon and frag in words:
                     lexicon[frag] = len(lexicon)

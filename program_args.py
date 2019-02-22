@@ -5,8 +5,8 @@ class ProgramArgs(argparse.Namespace):
     # Never use True/False !
     def __init__(self):
         super(ProgramArgs, self).__init__()
-        self.max_span_length = 10
-        self.max_sentence_length = 120
+        self.max_span_length = 15
+        self.max_sentence_length = 250
         self.char_count_gt = 0
         self.bichar_count_gt = 0
 
@@ -26,12 +26,12 @@ class ProgramArgs(argparse.Namespace):
         self.seg_emb_size = 25
         self.pos_emb_size = 25
         self.pos_bmes = 'off'
-        self.char_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.uni.ite50.vec"
+        self.char_emb_pretrain = "word2vec/lattice_lstm/gigauni.50.vec"
         # self.char_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
         # self.char_emb_pretrain = "off"
 
         self.bichar_emb_pretrain = 'off'
-        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigaword_chn.all.a2b.bi.ite50.vec"
+        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigauni.50.vec"
 
         # transformer config
         self.tfer_num_layer = 2
@@ -67,8 +67,8 @@ class ProgramArgs(argparse.Namespace):
         # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.50.vec"
         # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.300.vec"
         # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_bigram.300.vec"
-        # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
-        self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
+        self.lexicon_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
+        # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
 
         # loss
         self.focal_gamma = 0
@@ -85,12 +85,13 @@ class ProgramArgs(argparse.Namespace):
         self.use_sparse_embed = "on"
 
         # development config
+        self.max_match_num = 16
         self.batch_size = 32
         self.epoch_fix_char_emb = 5
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "msra"
+        self.use_data_set = "msrapred"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"

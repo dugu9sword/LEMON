@@ -33,6 +33,7 @@ def output(chars, tag):
                     print(chars[i], "M-{}".format(tags[tag]), file=out)
             print(chars[-1], "E-{}".format(tags[tag]), file=out)
 
+
 def output_seg(chars):
     if chars is None or len(chars) == 0:
         return
@@ -77,4 +78,11 @@ for sentence in tree.getroot():
     print(file=seg_out)
 
     # exit()
-print(lengths)
+lengths = [(k, lengths[k]) for k in sorted(lengths.keys())]
+total_num = sum(map(lambda x: x[1], lengths))
+agg_num = 0
+for a, b in lengths:
+    agg_num += b
+    print("{}  {}  {:.2f} {:.2f}".format(
+        a, b, b / total_num * 100, agg_num / total_num * 100)
+    )
