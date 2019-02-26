@@ -129,7 +129,8 @@ if __name__ == '__main__':
             python tagSchemeConverter.py IOB2BIO input_iob_file output_bio_file
         Input data format is the standard CoNLL 2003 data format.
     '''
-    BIO2BMOES("../dataset/msra/msra_train_bio.txt", "../dataset/msra/train.ner.bmes")
+    BIO2BMOES("../dataset/weibo/weiboNER_2nd_conll.dev",
+              "../dataset/weibo/dev.ner.bmes")
     # if sys.argv[1].upper() == "IOB2BIO":
     #     IOB2BIO(sys.argv[2], sys.argv[3])
     # elif sys.argv[1].upper() == "BIO2BIOES":

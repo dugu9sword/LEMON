@@ -9,21 +9,25 @@ import os
 from program_args import config
 import numpy as np
 
-usable_data_sets = {"ontogold": ("dataset/ontonotes4/train.mix.bmes",
-                             "dataset/ontonotes4/dev.mix.bmes",
-                             "dataset/ontonotes4/test.mix.bmes"),
-                    "ontothu": ("dataset/ontonotes4/train.mix.bmes.thu",
-                            "dataset/ontonotes4/dev.mix.bmes.thu",
-                            "dataset/ontonotes4/test.mix.bmes.thu"),
-                    "msrathu": ("dataset/msra/train.mix.bmes.thu",
-                                "dataset/msra/test.mix.bmes.thu",
-                                "dataset/msra/test.mix.bmes.thu"),
-                    "msrapred": ("dataset/msra/train.mix.bmes.pred",
-                                 "dataset/msra/test.mix.bmes.pred",
-                                 "dataset/msra/test.mix.bmes.pred"),
-                    "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
-                             "dataset/ontonotes4/tiny.mix.bmes",
-                             "dataset/ontonotes4/tiny.mix.bmes")}
+usable_data_sets = {
+    "ontogold": ("dataset/ontonotes4/train.mix.bmes",
+                 "dataset/ontonotes4/dev.mix.bmes",
+                 "dataset/ontonotes4/test.mix.bmes"),
+    "ontothu": ("dataset/ontonotes4/train.mix.bmes.thu",
+                "dataset/ontonotes4/dev.mix.bmes.thu",
+                "dataset/ontonotes4/test.mix.bmes.thu"),
+    "weibothu": ("dataset/weibo/train.mix.bmes.thu",
+                 "dataset/weibo/dev.mix.bmes.thu",
+                 "dataset/weibo/test.mix.bmes.thu"),
+    "msrathu": ("dataset/msra/train.mix.bmes.thu",
+                "dataset/msra/test.mix.bmes.thu",
+                "dataset/msra/test.mix.bmes.thu"),
+    "msrapred": ("dataset/msra/train.mix.bmes.pred",
+                 "dataset/msra/test.mix.bmes.pred",
+                 "dataset/msra/test.mix.bmes.pred"),
+    "tiny": ("dataset/ontonotes4/tiny.mix.bmes",
+             "dataset/ontonotes4/tiny.mix.bmes",
+             "dataset/ontonotes4/tiny.mix.bmes")}
 
 
 def load_sentences(file_path, sep=r"\s+"):
@@ -179,9 +183,9 @@ match2idx_mix = {
     "full_match": 0,
     "pre_1": 1,
     "pre_2": 2,
-    "pre_3": 3,
-    "suff_1": 4,
-    "suff_2": 5,
+    "suff_1": 3,
+    "suff_2": 4,
+    "pre_3": 5,
     "suff_3": 6,
     "inter_match": 7,
     "no_match": 8
@@ -199,8 +203,9 @@ class ConllDataSet(DataSet):
                  max_span_len=19260817,
                  sort_by_length=False):
         super(ConllDataSet, self).__init__()
-        self.word2idx = lexicon2idx
-        self.idx2word = {v: k for k, v in self.word2idx.items()}
+        if config.lexicon_emb_pretrain != "off":
+            self.word2idx = lexicon2idx
+            self.idx2word = {v: k for k, v in self.word2idx.items()}
 
         sentences = load_sentences(data_path)
 
@@ -255,29 +260,34 @@ class ConllDataSet(DataSet):
 
             __sentence_length_count[len(chars)] += 1
             if len(chars) < max_text_len:
-                if config.match_mode == "naive":
-                    lexmatches = match_lex_naive(group_fields(sen, indices=0),
-                                                 lexicon2idx=lexicon2idx)
-                    # for ele in lexmatches:
-                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1]+ 1]))
-                    #     for word_idx, match_type in ele[1]:
-                    #         print(">>\t" ,self.idx2word[word_idx], idx2match_naive[match_type])
-                elif config.match_mode == "presuff":
-                    lexmatches = match_lex_presuff(group_fields(sen, indices=0),
+                if config.lexicon_emb_pretrain != "off":
+                    if config.match_mode == "naive":
+                        lexmatches = match_lex_naive(group_fields(sen, indices=0),
+                                                     lexicon2idx=lexicon2idx)
+                        # for ele in lexmatches:
+                        #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1]+ 1]))
+                        #     for word_idx, match_type in ele[1]:
+                        #         print(">>\t" ,self.idx2word[word_idx], idx2match_naive[match_type])
+                    elif config.match_mode == "presuff":
+                        lexmatches = match_lex_presuff(group_fields(sen, indices=0),
+                                                       lexicon2idx=lexicon2idx)
+                        # for ele in lexmatches:
+                        #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]),
+                        #           self.idx2word[ele[1]], self.idx2word[ele[2]],
+                        #           idx2match_presuff[ele[3]])
+                    elif config.match_mode == "mix":
+                        lexmatches = match_lex_mix(group_fields(sen, indices=0),
                                                    lexicon2idx=lexicon2idx)
-                    # for ele in lexmatches:
-                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]),
-                    #           self.idx2word[ele[1]], self.idx2word[ele[2]],
-                    #           idx2match_presuff[ele[3]])
-                elif config.match_mode == "mix":
-                    lexmatches = match_lex_mix(group_fields(sen, indices=0),
-                                               lexicon2idx=lexicon2idx)
-                    # for ele in lexmatches:
-                    #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]))
-                    #     for word_idx, match_type in ele[1]:
-                    #         print(">>\t", self.idx2word[word_idx], idx2match_mix[match_type])
+                        # for ele in lexmatches:
+                        #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]))
+                        #     for word_idx, match_type in ele[1]:
+                        #         print(">>\t", self.idx2word[word_idx], idx2match_mix[match_type])
+                    elif config.match_mode == "off":
+                        lexmatches = None
+                    else:
+                        raise Exception
                 else:
-                    raise Exception
+                    lexmatches = None
 
                 self.data.append(Datum(chars=chars, bichars=bichars, segs=segs,
                                        poss=poss, ners=ners, labels=labels,

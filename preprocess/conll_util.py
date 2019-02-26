@@ -51,11 +51,11 @@ def permute_cols(*files, pidx, out_file):
 
 
 name = 'test'
-permute_cols("../dataset/msra/{}.ner.bmes".format(name),
-             "../dataset/msra/{}.seg.bmes.pred".format(name),
-             "../dataset/msra/{}.pos.bmes.thu".format(name),
+permute_cols("../dataset/weibo/{}.ner.bmes.noseg".format(name),
+             "../dataset/weibo/{}.seg.bmes.thu".format(name),
+             "../dataset/weibo/{}.pos.bmes.thu".format(name),
              pidx=((0, 0), (1, 1), (2, 1), (0, 1)),
-             out_file="../dataset/msra/{}.mix.bmes.pred".format(name))
+             out_file="../dataset/weibo/{}.mix.bmes.thu".format(name))
 
 
 def check_seg(file1, file2):

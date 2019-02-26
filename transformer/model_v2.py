@@ -83,5 +83,4 @@ class EncoderLayer(nn.Module):
 
         enc_output = self.pos_ffn(enc_output)
         enc_output *= non_pad_mask
-
         return enc_output, enc_slf_attn

@@ -50,10 +50,11 @@ def main():
               bichar_count_gt=config.bichar_count_gt,
               use_cache=config.load_from_cache == "on",
               ignore_tag_bmes=config.pos_bmes == 'off')
-    gen_lexicon_vocab(*used_data_set,
-                      word2vec_path=config.lexicon_emb_pretrain,
-                      out_folder=vocab_folder,
-                      use_cache=config.load_from_cache == "on")
+    if config.lexicon_emb_pretrain != "off":
+        gen_lexicon_vocab(*used_data_set,
+                          word2vec_path=config.lexicon_emb_pretrain,
+                          out_folder=vocab_folder,
+                          use_cache=config.load_from_cache == "on")
 
     char2idx, idx2char = load_vocab("{}/char.vocab".format(vocab_folder))
     bichar2idx, idx2bichar = load_vocab("{}/bichar.vocab".format(vocab_folder))
@@ -61,7 +62,10 @@ def main():
     pos2idx, idx2pos = load_vocab("{}/pos.vocab".format(vocab_folder))
     ner2idx, idx2ner = load_vocab("{}/ner.vocab".format(vocab_folder))
     label2idx, idx2label = load_vocab("{}/label.vocab".format(vocab_folder))
-    lexicon2idx, idx2lexicon = load_vocab("{}/lexicon.vocab".format(vocab_folder))
+    if config.lexicon_emb_pretrain != "off":
+        lexicon2idx, idx2lexicon = load_vocab("{}/lexicon.vocab".format(vocab_folder))
+    else:
+        lexicon2idx, idx2lexicon = None, None
 
     idx2str = lambda idx_lst: "".join(map(lambda x: idx2char[x], idx_lst))
     train_set = auto_create(
@@ -152,7 +156,7 @@ def main():
         if epoch_id == config.epoch_max:
             break
         # luban7.embeds.fix_grad(epoch_id < config.epoch_fix_char_emb)
-        if config.match_mode != 'off':
+        if config.lexicon_emb_pretrain != 'off':
             for param in luban7.lexicon_embeds.parameters():
                 param.requires_grad = epoch_id > config.epoch_fix_lexicon_emb
         for param in luban7.embeds.parameters():
@@ -231,9 +235,10 @@ def main():
         """
         thresholds = [-1, 0.1, 0.2, 0.3, 0.4]
         crf_evaluator = CRFEvaluator(idx2tag=idx2ner)
-        luban_evals = [LubanEvaluator() for _ in range(len(thresholds))]
+        luban_evals = [LubanEvaluator(config.use_data_set) for _ in range(len(thresholds))]
         with torch.no_grad():
             luban7.eval()
+            # sets_for_validation = {"test_set": test_set}
             sets_for_validation = {"dev_set": dev_set, "test_set": test_set}
             if epoch_id > config.epoch_show_train:
                 sets_for_validation["train_set"] = train_set
@@ -249,6 +254,8 @@ def main():
                     texts = list(map(lambda x: x[0], batch_data))
                     text_lens = batch_lens(texts)
 
+                    print(">>> text ", text_lens)
+
                     # >>> CRF
                     if config.crf != 0.0:
                         results = luban7.crf_decode(batch_data)
@@ -258,7 +265,10 @@ def main():
 
                     # >>> Luban
                     if config.crf != 1.0:
-                        score, span_ys = luban7.get_span_score_tags(batch_data)
+                        if config.show_att == "on":
+                            score, span_ys, lex_att_score = luban7.get_span_score_tags(batch_data, True)
+                        else:
+                            score, span_ys = luban7.get_span_score_tags(batch_data, False)
                         score_probs = F.softmax(score, dim=1)
 
                         for ts_id, threshold in enumerate(thresholds):
@@ -292,6 +302,15 @@ def main():
                                         )
                                         luban_spans.append(luban_span)
                                         log_to_buffer(luban_span_to_str(luban_span))
+                                        if config.show_att == "on":
+                                            frag_idx, matched_lex = batch_data[bid].lexmatches[sid]
+                                            score_list = cast_list(lex_att_score[span_offset][0])
+                                            for i in range(len(matched_lex)):
+                                                log_to_buffer("\t\t\t{} {} {:.3f}".format(
+                                                    matched_lex[i][1],
+                                                    idx2lexicon[matched_lex[i][0]],
+                                                    score_list[i]
+                                                ))
                                 luban_evals[ts_id].decode(luban_spans)
                                 offset += len(enum_spans)
                             log_flush_buffer()

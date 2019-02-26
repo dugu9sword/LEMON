@@ -96,13 +96,21 @@ def luban_span_to_str(luban_span: LubanSpan):
 
 
 class LubanEvaluator:
-    def __init__(self):
+    def __init__(self, dataset):
         self.corr_num = 0.
         self.gold_num = 0.
         self.pred_num = 0.
-        self.TP = {"PER": 0., "GPE": 0., "LOC": 0., "ORG": 0., "NONE": 0.}  # in gold, in pred
-        self.FP = {"PER": 0., "GPE": 0., "LOC": 0., "ORG": 0., "NONE": 0.}  # not in gold, in pred
-        self.FN = {"PER": 0., "GPE": 0., "LOC": 0., "ORG": 0., "NONE": 0.}  # in gold, not in pred
+        if "weibo" in dataset:
+            self.tags = ["PER.NOM", "PER.NAM", "GPE.NOM", "GPE.NAM",
+                         "LOC.NOM", "LOC.NAM", "ORG.NOM", "ORG.NAM",
+                         "NONE"]
+        elif "onto" in dataset:
+            self.tags = ["PER", "GPE", "LOC", "ORG", "NONE"]
+        elif "msra" in dataset:
+            self.tags = ["LOC", "PER", "ORG", "NONE"]
+        self.TP = {ele: 0. for ele in self.tags}  # in gold, in pred
+        self.FP = {ele: 0. for ele in self.tags}  # not in gold, in pred
+        self.FN = {ele: 0. for ele in self.tags}  # in gold, not in pred
 
     def decode(self,
                results: List[LubanSpan],
@@ -172,7 +180,9 @@ class LubanEvaluator:
         mi_rec = (0, 0)
         ma_pre = 0.
         ma_rec = 0.
-        for entype in ['GPE', 'LOC', 'ORG', 'PER']:
+        for entype in self.tags:
+            if entype == "NONE":
+                continue
             pre = self.TP[entype] / (self.TP[entype] + self.FP[entype] + 1e-10)
             rec = self.TP[entype] / (self.TP[entype] + self.FN[entype] + 1e-10)
             ma_pre += pre

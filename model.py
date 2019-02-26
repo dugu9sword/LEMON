@@ -16,6 +16,8 @@ from program_args import config
 
 
 def gen_word2vec_name_dim(word2vec_pretrain):
+    if word2vec_pretrain == "off":
+        return "off", 0
     found = re.search(r"([^/.]*.(\d+)).vec", word2vec_pretrain)
     return found.group(1), int(found.group(2))
 
@@ -69,7 +71,7 @@ class Luban7(torch.nn.Module):
         if config.token_type == "tfer":
             self.token_encoder = TransformerEncoderV2(
                 d_model=embed_dim,
-                len_max_seq=longest_text_len,
+                len_max_seq=config.max_sentence_length,
                 n_layers=config.tfer_num_layer,
                 n_head=config.tfer_num_head,
                 d_head=config.tfer_head_dim,
@@ -173,7 +175,7 @@ class Luban7(torch.nn.Module):
         ])
 
         """ Lexicon Embedding """
-        if config.match_mode != "off":
+        if config.lexicon_emb_pretrain != "off":
             lexicon_emb_name, lexicon_emb_dim = gen_word2vec_name_dim(config.lexicon_emb_pretrain)
             self.lexicon_embeds = torch.nn.Embedding(len(lexicon2idx),
                                                      lexicon_emb_dim,
@@ -304,7 +306,7 @@ class Luban7(torch.nn.Module):
         results = self.ner_crf.decode(scores, masks)
         return results
 
-    def get_span_score_tags(self, batch_data):
+    def get_span_score_tags(self, batch_data, lex_att=False):
         chars = group_fields(batch_data, keys='chars')
         text_lens = batch_lens(chars)
         labels = group_fields(batch_data, keys='labels')
@@ -354,51 +356,57 @@ class Luban7(torch.nn.Module):
         else:
             raise Exception
 
-        if config.match_mode == "naive" or config.match_mode == "mix":
-            lexmatches = group_fields(batch_data, keys='lexmatches')
-            lexmatches = [item[1] for sublist in lexmatches for item in sublist]
-            assert len(lexmatches) == frag_reprs.size(0)
-            frag_match_lexicons, frag_match_types = [], []
-            for it_match in lexmatches:
-                if len(it_match) == 0:
-                    frag_match_lexicons.append([])
-                    frag_match_types.append([])
-                else:
-                    frag_match_lexicons.append(group_fields(it_match, indices=0))
-                    frag_match_types.append(group_fields(it_match, indices=1))
+        if config.lexicon_emb_pretrain != "off":
+            if config.match_mode == "naive" or config.match_mode == "mix":
+                lexmatches = group_fields(batch_data, keys='lexmatches')
+                lexmatches = [item[1] for sublist in lexmatches for item in sublist]
+                assert len(lexmatches) == frag_reprs.size(0)
+                frag_match_lexicons, frag_match_types = [], []
+                for it_match in lexmatches:
+                    if len(it_match) == 0:
+                        frag_match_lexicons.append([])
+                        frag_match_types.append([])
+                    else:
+                        frag_match_lexicons.append(group_fields(it_match, indices=0))
+                        frag_match_types.append(group_fields(it_match, indices=1))
 
-            mask = gen_att_mask(batch_lens(frag_match_lexicons), max_match_num, 1).to(self.device)
-            frag_match_lexicons = batch_pad(frag_match_lexicons, pad_len=max_match_num)
-            frag_match_types = batch_pad(frag_match_types, pad_len=max_match_num)
-            frag_match_lexicons = torch.tensor(frag_match_lexicons, dtype=torch.long, device=self.device)
-            frag_match_types = torch.tensor(frag_match_types, dtype=torch.long, device=self.device)
-            mem_lexicon = self.lexicon_embeds(frag_match_lexicons)
-            mem_match = self.match_embeds(frag_match_types)
-            memory = torch.cat([mem_lexicon, mem_match], dim=2)
-            if config.match_head == 0:
-                att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, mask)
-            elif config.match_head > 0:
-                att_word, _ = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
+                mask = gen_att_mask(batch_lens(frag_match_lexicons), max_match_num, 1).to(self.device)
+                frag_match_lexicons = batch_pad(frag_match_lexicons, pad_len=max_match_num)
+                frag_match_types = batch_pad(frag_match_types, pad_len=max_match_num)
+                frag_match_lexicons = torch.tensor(frag_match_lexicons, dtype=torch.long, device=self.device)
+                frag_match_types = torch.tensor(frag_match_types, dtype=torch.long, device=self.device)
+                mem_lexicon = self.lexicon_embeds(frag_match_lexicons)
+                mem_match = self.match_embeds(frag_match_types)
+                memory = torch.cat([mem_lexicon, mem_match], dim=2)
+                if config.match_head == 0:
+                    att_word, lex_att_score = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, mask)
+                elif config.match_head > 0:
+                    att_word, lex_att_score = self.lexicon_attention(frag_reprs.unsqueeze(1), memory, memory, mask)
+                else:
+                    raise Exception
+                frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
+            elif config.match_mode == "presuff":
+                lexmatches = group_fields(batch_data, keys='lexmatches')
+                pre_match_idx = [item[1] for sublist in lexmatches for item in sublist]
+                suff_match_idx = [item[2] for sublist in lexmatches for item in sublist]
+                match_type_idx = [item[3] for sublist in lexmatches for item in sublist]
+                assert len(pre_match_idx) == len(suff_match_idx) == len(match_type_idx) == frag_reprs.size(0)
+                pre_match_lex = self.lexicon_embeds(torch.tensor(pre_match_idx, dtype=torch.long, device=self.device))
+                suff_match_lex = self.lexicon_embeds(torch.tensor(suff_match_idx, dtype=torch.long, device=self.device))
+                match_type = self.match_embeds(torch.tensor(match_type_idx, dtype=torch.long, device=self.device))
+                frag_reprs = torch.cat([frag_reprs, pre_match_lex, suff_match_lex, match_type], dim=1)
+            elif config.match_mode == "off":
+                pass
             else:
                 raise Exception
-            frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
-        elif config.match_mode == "presuff":
-            lexmatches = group_fields(batch_data, keys='lexmatches')
-            pre_match_idx = [item[1] for sublist in lexmatches for item in sublist]
-            suff_match_idx = [item[2] for sublist in lexmatches for item in sublist]
-            match_type_idx = [item[3] for sublist in lexmatches for item in sublist]
-            assert len(pre_match_idx) == len(suff_match_idx) == len(match_type_idx) == frag_reprs.size(0)
-            pre_match_lex = self.lexicon_embeds(torch.tensor(pre_match_idx, dtype=torch.long, device=self.device))
-            suff_match_lex = self.lexicon_embeds(torch.tensor(suff_match_idx, dtype=torch.long, device=self.device))
-            match_type = self.match_embeds(torch.tensor(match_type_idx, dtype=torch.long, device=self.device))
-            frag_reprs = torch.cat([frag_reprs, pre_match_lex, suff_match_lex, match_type], dim=1)
-        else:
-            raise Exception
 
         span_ys = self.gen_span_ys(chars, labels)
         # score = frag_reprs @ self.label_weight + self.label_bias
         score = self.scorer(frag_reprs)
-        return score, span_ys
+        if lex_att:
+            return score, span_ys, lex_att_score
+        else:
+            return score, span_ys
 
 
 @lru_cache(maxsize=None)

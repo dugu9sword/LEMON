@@ -31,12 +31,12 @@ class ProgramArgs(argparse.Namespace):
         # self.char_emb_pretrain = "off"
 
         self.bichar_emb_pretrain = 'off'
-        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigauni.50.vec"
+        # self.bichar_emb_pretrain = "word2vec/lattice_lstm/gigabi.50.vec"
 
         # transformer config
-        self.tfer_num_layer = 2
-        self.tfer_num_head = 1
-        self.tfer_head_dim = 128
+        self.tfer_num_layer = 6
+        self.tfer_num_head = 8
+        self.tfer_head_dim = 512
 
         # rnn config
         self.rnn_num_layer = 2
@@ -58,7 +58,7 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.match_mode = "naive"
+        self.match_mode = "mix"
         self.match_head = 0  # 1,2,3...: multi-head attention; 0: vanilla attention
         self.match_emb_size = 25
         # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
@@ -67,8 +67,9 @@ class ProgramArgs(argparse.Namespace):
         # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.50.vec"
         # self.lexicon_emb_pretrain = "word2vec/fjt/fjt.300.vec"
         # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_bigram.300.vec"
-        self.lexicon_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
-        # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
+        # self.lexicon_emb_pretrain = "word2vec/sgns/sgns_char.300.vec"
+        # self.lexicon_emb_pretrain = "off"
+        self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
 
         # loss
         self.focal_gamma = 0
@@ -85,18 +86,19 @@ class ProgramArgs(argparse.Namespace):
         self.use_sparse_embed = "on"
 
         # development config
-        self.max_match_num = 16
+        self.max_match_num = 12
         self.batch_size = 32
         self.epoch_fix_char_emb = 5
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "msrapred"
+        self.use_data_set = "ontogold"
         self.epoch_max = 30
         self.epoch_show_train = 60
-        self.model_name = "off"
+        self.model_name = "plotattmix"
         self.model_ckpt = -1
         self.check_nan = "off"
+        self.show_att = "off"
 
     @staticmethod
     def parse(verbose=False) -> "ProgramArgs":
