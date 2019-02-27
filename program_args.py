@@ -58,7 +58,7 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.match_mode = "mix"
+        self.match_mode = "middle"
         self.match_head = 0  # 1,2,3...: multi-head attention; 0: vanilla attention
         self.match_emb_size = 25
         # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
@@ -92,10 +92,10 @@ class ProgramArgs(argparse.Namespace):
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "ontogold"
+        self.use_data_set = "weibothu"
         self.epoch_max = 30
         self.epoch_show_train = 60
-        self.model_name = "plotattmix"
+        self.model_name = "off"
         self.model_ckpt = -1
         self.check_nan = "off"
         self.show_att = "off"

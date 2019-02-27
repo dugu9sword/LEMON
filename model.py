@@ -8,7 +8,7 @@ from context_enumerator import ContextEnumerator
 from seq_encoder import RNNSeqEncoder, FofeSeqEncoder, AverageSeqEncoder
 from transformer import TransformerEncoderV2, PositionWiseFeedForward
 from functools import lru_cache
-from dataset import Sp, match2idx_naive, match2idx_presuff, match2idx_mix, max_match_num
+from dataset import Sp, match2idx_naive, match2idx_middle, match2idx_mix, max_match_num
 from token_encoder import BiRNNTokenEncoder, MixEmbedding
 from attention import MultiHeadAttention, gen_att_mask, VanillaAttention
 from torch_crf import CRF
@@ -188,11 +188,15 @@ class Luban7(torch.nn.Module):
                 cached_name="lexicon".format(lexicon_emb_name)
                 if config.load_from_cache == "on" else None
             )
-            if config.match_mode == "naive" or config.match_mode == "mix":
+            if config.match_mode in ["naive", "mix", "middle"]:
                 if config.match_mode == "naive":
                     match_vocab_size = len(match2idx_naive)
-                else:
+                elif config.match_mode == "mix":
                     match_vocab_size = len(match2idx_mix)
+                elif config.match_mode == "middle":
+                    match_vocab_size = len(match2idx_middle)
+                else:
+                    raise Exception
                 self.match_embeds = torch.nn.Embedding(match_vocab_size,
                                                        config.match_emb_size,
                                                        sparse=config.use_sparse_embed == "on")
@@ -214,11 +218,6 @@ class Luban7(torch.nn.Module):
                     frag_dim += lexicon_emb_dim + config.match_emb_size
                 else:
                     raise Exception
-            elif config.match_mode == "presuff":
-                self.match_embeds = torch.nn.Embedding(len(match2idx_presuff),
-                                                       config.match_emb_size,
-                                                       sparse=config.use_sparse_embed == "on")
-                frag_dim = frag_dim + lexicon_emb_dim * 2 + config.match_emb_size
             else:
                 raise Exception
 
@@ -357,7 +356,7 @@ class Luban7(torch.nn.Module):
             raise Exception
 
         if config.lexicon_emb_pretrain != "off":
-            if config.match_mode == "naive" or config.match_mode == "mix":
+            if config.match_mode in ["naive", "middle", "mix"]:
                 lexmatches = group_fields(batch_data, keys='lexmatches')
                 lexmatches = [item[1] for sublist in lexmatches for item in sublist]
                 assert len(lexmatches) == frag_reprs.size(0)
@@ -385,16 +384,6 @@ class Luban7(torch.nn.Module):
                 else:
                     raise Exception
                 frag_reprs = torch.cat([frag_reprs, att_word.squeeze(1)], dim=1)
-            elif config.match_mode == "presuff":
-                lexmatches = group_fields(batch_data, keys='lexmatches')
-                pre_match_idx = [item[1] for sublist in lexmatches for item in sublist]
-                suff_match_idx = [item[2] for sublist in lexmatches for item in sublist]
-                match_type_idx = [item[3] for sublist in lexmatches for item in sublist]
-                assert len(pre_match_idx) == len(suff_match_idx) == len(match_type_idx) == frag_reprs.size(0)
-                pre_match_lex = self.lexicon_embeds(torch.tensor(pre_match_idx, dtype=torch.long, device=self.device))
-                suff_match_lex = self.lexicon_embeds(torch.tensor(suff_match_idx, dtype=torch.long, device=self.device))
-                match_type = self.match_embeds(torch.tensor(match_type_idx, dtype=torch.long, device=self.device))
-                frag_reprs = torch.cat([frag_reprs, pre_match_lex, suff_match_lex, match_type], dim=1)
             elif config.match_mode == "off":
                 pass
             else:

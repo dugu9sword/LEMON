@@ -171,13 +171,16 @@ match2idx_naive = {"full_match": 0,
                    "no_match": 4}
 idx2match_naive = {v: k for k, v in match2idx_naive.items()}
 
-match2idx_presuff = {
+match2idx_middle = {
     "full_match": 0,
-    "over_match": 1,
-    "concat_match": 2,
-    "under_match": 3
+    "pre_1": 1,
+    "suff_1": 2,
+    "pre_2": 3,
+    "suff_2": 4,
+    "inter_match": 5,
+    "no_match": 6
 }
-idx2match_presuff = {v: k for k, v in match2idx_presuff.items()}
+idx2match_middle = {v: k for k, v in match2idx_middle.items()}
 
 match2idx_mix = {
     "full_match": 0,
@@ -268,13 +271,13 @@ class ConllDataSet(DataSet):
                         #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1]+ 1]))
                         #     for word_idx, match_type in ele[1]:
                         #         print(">>\t" ,self.idx2word[word_idx], idx2match_naive[match_type])
-                    elif config.match_mode == "presuff":
-                        lexmatches = match_lex_presuff(group_fields(sen, indices=0),
-                                                       lexicon2idx=lexicon2idx)
+                    elif config.match_mode == "middle":
+                        lexmatches = match_lex_middle(group_fields(sen, indices=0),
+                                                      lexicon2idx=lexicon2idx)
                         # for ele in lexmatches:
-                        #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]),
-                        #           self.idx2word[ele[1]], self.idx2word[ele[2]],
-                        #           idx2match_presuff[ele[3]])
+                        #     print("".join(group_fields(sen, indices=0)[ele[0][0]: ele[0][1] + 1]))
+                        #     for word_idx, match_type in ele[1]:
+                        #         print(">>\t", self.idx2word[word_idx], idx2match_middle[match_type])
                     elif config.match_mode == "mix":
                         lexmatches = match_lex_mix(group_fields(sen, indices=0),
                                                    lexicon2idx=lexicon2idx)
@@ -380,7 +383,7 @@ def downto(b, a) -> range:
     return range(b, a - 1, -1)
 
 
-def match_lex_presuff(chars, lexicon2idx):
+def match_lex_middle(chars, lexicon2idx):
     mapping_dict = {}  # type: Dict[FragIdx, int]
     ret = []
     length = len(chars)
@@ -391,27 +394,37 @@ def match_lex_presuff(chars, lexicon2idx):
         if lexicon in lexicon2idx:
             mapping_dict[FragIdx(i, j)] = lexicon2idx[lexicon]
     for i, j in fragments(length, config.max_span_length):
-        pre_match, suff_match = lexicon2idx[Sp.oov], lexicon2idx[Sp.oov]
-        for pre_j in downto(j, i):
-            if FragIdx(i, pre_j) in mapping_dict:
-                pre_match = mapping_dict[FragIdx(i, pre_j)]
-                break
-        for suff_i in upto(i, j):
-            if FragIdx(suff_i, j) in mapping_dict:
-                suff_match = mapping_dict[FragIdx(suff_i, j)]
-                break
-        if pre_j == j:
-            match_type = match2idx_presuff["full_match"]
-        elif pre_j + 1 > suff_i:
-            match_type = match2idx_presuff["over_match"]
-        elif pre_j + 1 == suff_i:
-            match_type = match2idx_presuff["concat_match"]
-        elif pre_j + 1 < suff_i:
-            match_type = match2idx_presuff["under_match"]
-        else:
-            raise Exception
+        matched_lexicons = []
+        for sub_i in upto(i, j):
+            for sub_j in upto(sub_i, j):
+                if FragIdx(sub_i, sub_j) in mapping_dict:
+                    if sub_i == i and sub_j == j:
+                        m_idx = match2idx_middle['full_match']
+                    elif sub_i == i and sub_j != j:
+                        if sub_j == i:
+                            m_idx = match2idx_middle["pre_1"]
+                        else:
+                            m_idx = match2idx_middle["pre_2"]
+                    elif sub_i != i and sub_j == j:
+                        if j == sub_i:
+                            m_idx = match2idx_middle["suff_1"]
+                        else:
+                            m_idx = match2idx_middle["suff_2"]
+                    elif sub_i != sub_j:
+                        m_idx = match2idx_middle["inter_match"]
+                    else:
+                        continue
+                    matched_lexicons.append(
+                        pair(mapping_dict[FragIdx(sub_i, sub_j)], m_idx)
+                    )
+        matched_lexicons.sort(key=lambda x: x[1])
+        matched_lexicons = matched_lexicons[:max_match_num]
+        if len(matched_lexicons) == 0:
+            matched_lexicons.append(
+                pair(lexicon2idx[Sp.non], match2idx_middle["no_match"])
+            )
         ret.append(
-            (pair(i, j), pre_match, suff_match, match_type)
+            (pair(i, j), matched_lexicons)
         )
     return ret
 
