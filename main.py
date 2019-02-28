@@ -32,6 +32,8 @@ def enum_span_by_length(text_len):
 
 def main():
     log_config("main.txt.{}".format(time.strftime("%m%d.%H%M%S")), "cf")
+    for key, value in config.__dict__.items():
+        log("\t--{}={}".format(key, value))
     used_data_set = usable_data_sets[config.use_data_set]
     lex_vec_name, _ = gen_word2vec_name_dim(config.lexicon_emb_pretrain)
     char_emb_name, _ = gen_word2vec_name_dim(config.char_emb_pretrain)

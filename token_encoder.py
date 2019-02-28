@@ -12,7 +12,7 @@ class MixEmbedding(torch.nn.Module):
                  sparse=False):
         super(MixEmbedding, self).__init__()
         self.char_embeds = torch.nn.Embedding(char_vocab_size, char_emb_size, sparse=sparse)
-        self.char_drop = torch.nn.Dropout(pos_dropout)
+        self.char_drop = torch.nn.Dropout(char_dropout)
         if bichar_emb_size > 0:
             self.bichar_embeds = torch.nn.Embedding(bichar_vocab_size, bichar_emb_size, sparse=sparse)
         else:

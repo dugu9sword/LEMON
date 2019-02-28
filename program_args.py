@@ -72,7 +72,7 @@ class ProgramArgs(argparse.Namespace):
         self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50.vec"
 
         # loss
-        self.focal_gamma = 0
+        self.focal_gamma = 2
         self.focal_reduction = "mean"
 
         # regularization
@@ -93,7 +93,7 @@ class ProgramArgs(argparse.Namespace):
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "resumethu"
+        self.use_data_set = "weibothu"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"
@@ -122,4 +122,4 @@ class ProgramArgs(argparse.Namespace):
         return parsed_args  # type: ProgramArgs
 
 
-config = ProgramArgs.parse(True)
+config = ProgramArgs.parse(False)
