@@ -5,13 +5,14 @@ from buff import load_word2vec, log
 
 class MixEmbedding(torch.nn.Module):
     def __init__(self,
-                 char_vocab_size, char_emb_size,
+                 char_vocab_size, char_emb_size, char_dropout,
                  bichar_vocab_size, bichar_emb_size,
                  seg_vocab_size, seg_emb_size, seg_dropout,
                  pos_vocab_size, pos_emb_size, pos_dropout,
                  sparse=False):
         super(MixEmbedding, self).__init__()
         self.char_embeds = torch.nn.Embedding(char_vocab_size, char_emb_size, sparse=sparse)
+        self.char_drop = torch.nn.Dropout(pos_dropout)
         if bichar_emb_size > 0:
             self.bichar_embeds = torch.nn.Embedding(bichar_vocab_size, bichar_emb_size, sparse=sparse)
         else:
@@ -41,9 +42,9 @@ class MixEmbedding(torch.nn.Module):
 
     def forward(self, pad_chars, pad_bichars, pad_segs, pad_poss):
         if self.__fix_grad:
-            embeds_to_cat = [self.char_embeds(pad_chars).detach()]
+            embeds_to_cat = [self.char_drop(self.char_embeds(pad_chars).detach())]
         else:
-            embeds_to_cat = [self.char_embeds(pad_chars)]
+            embeds_to_cat = [self.char_drop(self.char_embeds(pad_chars))]
         if self.seg_embeds:
             embeds_to_cat.append(self.seg_drop(self.seg_embeds(pad_segs)))
         if self.pos_embeds:

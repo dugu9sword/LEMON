@@ -41,6 +41,7 @@ class Luban7(torch.nn.Module):
         """ Embedding Layer """
         self.embeds = MixEmbedding(char_vocab_size=len(char2idx),
                                    char_emb_size=config.char_emb_size,
+                                   char_dropout=config.drop_char,
                                    seg_vocab_size=len(seg2idx),
                                    seg_emb_size=config.seg_emb_size,
                                    seg_dropout=config.drop_segpos,

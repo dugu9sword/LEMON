@@ -58,7 +58,7 @@ class ProgramArgs(argparse.Namespace):
         self.num_nonlinear = 2
 
         # lexicon embedding
-        self.match_mode = "middle"
+        self.match_mode = "mix"
         self.match_head = 0  # 1,2,3...: multi-head attention; 0: vanilla attention
         self.match_emb_size = 25
         # self.lexicon_emb_pretrain = "word2vec/lattice_lstm/ctb.50d.vec"
@@ -77,11 +77,12 @@ class ProgramArgs(argparse.Namespace):
 
         # regularization
         self.drop_default = 0.1
-        self.drop_segpos = 0.1
+        self.drop_char = 0.3
+        self.drop_segpos = 0.3
         self.drop_token_encoder = 0.1
         # self.drop_frag = 0.1
         self.drop_nonlinear = 0
-        self.weight_decay = 1e-5
+        self.weight_decay = 1e-7
 
         self.use_sparse_embed = "on"
 
@@ -92,7 +93,7 @@ class ProgramArgs(argparse.Namespace):
         self.epoch_fix_lexicon_emb = 5
         self.load_from_cache = "on"
         self.train_on = "on"
-        self.use_data_set = "weibothu"
+        self.use_data_set = "resumethu"
         self.epoch_max = 30
         self.epoch_show_train = 60
         self.model_name = "off"

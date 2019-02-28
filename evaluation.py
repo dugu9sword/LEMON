@@ -108,6 +108,8 @@ class LubanEvaluator:
             self.tags = ["PER", "GPE", "LOC", "ORG", "NONE"]
         elif "msra" in dataset:
             self.tags = ["LOC", "PER", "ORG", "NONE"]
+        elif "resume" in dataset:
+            self.tags = ["NAME", "CONT", "EDU", "TITLE", "ORG", "RACE", "LOC", "PRO", "NONE"]
         self.TP = {ele: 0. for ele in self.tags}  # in gold, in pred
         self.FP = {ele: 0. for ele in self.tags}  # not in gold, in pred
         self.FN = {ele: 0. for ele in self.tags}  # in gold, not in pred

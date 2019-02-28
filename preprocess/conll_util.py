@@ -50,12 +50,12 @@ def permute_cols(*files, pidx, out_file):
 #              out_file="../dataset/ontonotes4/{}.mix.bmes.{}".format(name, pred))
 
 
-name = 'test'
-permute_cols("../dataset/weibo/{}.ner.bmes.noseg".format(name),
-             "../dataset/weibo/{}.seg.bmes.thu".format(name),
-             "../dataset/weibo/{}.pos.bmes.thu".format(name),
+name = 'train'
+permute_cols("../dataset/resume/{}.ner.bmes".format(name),
+             "../dataset/resume/{}.seg.bmes.thu".format(name),
+             "../dataset/resume/{}.pos.bmes.thu".format(name),
              pidx=((0, 0), (1, 1), (2, 1), (0, 1)),
-             out_file="../dataset/weibo/{}.mix.bmes.thu".format(name))
+             out_file="../dataset/resume/{}.mix.bmes.thu".format(name))
 
 
 def check_seg(file1, file2):
