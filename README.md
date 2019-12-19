@@ -1,6 +1,6 @@
 # LEMON
 
-**LEMON** stands for **LE**xicon-**M**em**O**ry-augmented-**N**er.
+**LEMON** stands for **LE**xicon-**M**em**O**ry-augmented-**N**er. (https://arxiv.org/abs/1912.08282)
 
 ## Requirements
 - Python: `3.6` or higher
